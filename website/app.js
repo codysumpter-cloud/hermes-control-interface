@@ -3,10 +3,11 @@ const state = {
   socket: null,
   pollTimer: null,
   clockTimer: null,
+  sessionsPoller: null,
   lastLogId: null,
   currentFile: null,
   currentTree: [],
-  expandedRoots: new Set(['projects', 'hermes']),
+  expandedRoots: new Set(['hermes']),
   expandedDirs: new Set(),
   dirty: false,
   terminalLineCount: 0,
@@ -16,6 +17,7 @@ const state = {
   terminalInitRetry: null,
   pendingTerminalBuffer: '',
   terminalFullscreen: false,
+  explorerFullscreen: false,
   avatarSource: '',
   avatarImage: null,
   avatarCanvas: null,
@@ -45,7 +47,7 @@ const els = {
   layoutEditBtn: $('#layout-edit-btn'),
   layoutSaveBtn: $('#layout-save-btn'),
   logoutBtn: $('#logout-btn'),
-  projectsList: $('#projects-list'),
+  projectsList: null, // removed - projects sidebar gone
   sessionsList: $('#sessions-list'),
   quickActions: $('#quick-actions'),
   terminalOutput: $('#terminal-output'),
@@ -62,6 +64,10 @@ const els = {
   editorMeta: $('#editor-meta'),
   editor: $('#file-editor'),
   saveBtn: $('#save-file-btn'),
+  explorerFullscreenBtn: $('#explorer-fullscreen-btn'),
+  sidebarAgentSprite: $('#sidebar-agent-sprite'),
+  sidebarAgentState: $('#sidebar-agent-state'),
+  sidebarAgentDetails: $('#sidebar-agent-details'),
   systemPanel: $('#system-panel'),
   cronPanel: $('#cron-panel'),
   tokensPanel: $('#tokens-panel'),
@@ -385,6 +391,24 @@ function setTerminalFullscreen(enabled) {
   });
 }
 
+function setExplorerFullscreen(enabled) {
+  state.explorerFullscreen = Boolean(enabled);
+  if (state.explorerFullscreen && window.matchMedia('(max-width: 1200px)').matches) {
+    state.explorerFullscreen = false;
+  }
+  document.body.classList.toggle('explorer-fullscreen', state.explorerFullscreen);
+  els.shell.classList.toggle('explorer-fullscreen', state.explorerFullscreen);
+  const panel = document.querySelector('[data-panel-id="explorer"]');
+  if (panel) panel.classList.toggle('is-fullscreen', state.explorerFullscreen);
+  if (els.explorerFullscreenBtn) {
+    els.explorerFullscreenBtn.textContent = state.explorerFullscreen ? 'exit fullscreen' : 'fullscreen';
+  }
+  syncTopbarOffset();
+  requestAnimationFrame(() => {
+    syncTopbarOffset();
+  });
+}
+
 function writeTerminalRaw(chunk) {
   const raw = String(chunk || '');
   if (!raw) return;
@@ -420,11 +444,48 @@ function renderList(container, items, formatter) {
   });
 }
 
-function renderProjects(snapshot) {
-  renderList(els.projectsList, snapshot.projects || [], (item) => `${escapeHtml(item.name)}<span class="meta">${escapeHtml(item.path)}</span>`);
+function renderSidebarAgent(snapshot) {
+  const agent = snapshot.agent || {};
+  const label = agent.label || 'idle';
+  const details = agent.details || 'standby';
+  if (els.sidebarAgentState) els.sidebarAgentState.textContent = label;
+  if (els.sidebarAgentDetails) els.sidebarAgentDetails.textContent = details;
+  drawSidebarSprite(agent.state || 'idle', agent.frame || 0);
+}
+
+const SIDEBAR_COLORS = {
+  o: '#f4c75c', h: '#ede6d4', s: '#b0a98c', e: '#7a6f5a',
+  m: '#f4c75c', x: '#ede6d4', j: '#c9a96e', b: '#4a5568',
+  t: '#ede6d4', p: '#3a5a40', g: '#67fb7f', r: '#ff7171',
+  w: '#ffffff', d: '#9ca3af', '-': 'transparent',
+};
+
+function drawSidebarSprite(stateName, frameIdx) {
+  const canvas = els.sidebarAgentSprite;
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  const frames = spriteFrames[stateName] || spriteFrames.idle;
+  const frame = frames[frameIdx % frames.length];
+  const pw = 18, ph = 18, scale = 3;
+  canvas.width = pw * scale;
+  canvas.height = ph * scale;
+  ctx.fillStyle = '#0e121b';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let row = 0; row < frame.length; row++) {
+    const line = frame[row] || '';
+    for (let col = 0; col < line.length; col++) {
+      const ch = line[col];
+      const color = SIDEBAR_COLORS[ch] || null;
+      if (!color) continue;
+      ctx.fillStyle = color;
+      ctx.fillRect(col * scale, row * scale, scale, scale);
+    }
+  }
 }
 
 function renderSessions(snapshot) {
+  // Sessions rendered from /api/sessions polling (limit 10)
   const sessions = Array.isArray(snapshot.sessions) ? snapshot.sessions : [];
   if (!sessions.length) {
     els.sessionsList.innerHTML = '<div class="list-item"><span class="bullet" style="background: var(--amber);"></span><div class="item-text">No sessions found<span class="meta">run hermes sessions list</span></div></div>';
@@ -440,6 +501,32 @@ function renderSessions(snapshot) {
       <div class="item-text">${title}<span class="meta">${preview} • ${lastActive} • ${id}</span></div>
     </div>`;
   }).join('');
+}
+
+async function pollSidebarSessions() {
+  try {
+    const res = await fetch('/api/sessions');
+    if (!res.ok) return;
+    const data = await res.json();
+    // Merge sessions into current snapshot without replacing the whole thing
+    if (state.snapshot) {
+      state.snapshot.sessions = data.sessions;
+    }
+    renderSessions(state.snapshot || { sessions: data.sessions });
+  } catch {}
+}
+
+function startSessionsPoller(intervalMs = 10_000) {
+  stopSessionsPoller();
+  pollSidebarSessions();
+  state.sessionsPoller = setInterval(pollSidebarSessions, intervalMs);
+}
+
+function stopSessionsPoller() {
+  if (state.sessionsPoller) {
+    clearInterval(state.sessionsPoller);
+    state.sessionsPoller = null;
+  }
 }
 
 function renderQuickActions(snapshot) {
@@ -734,8 +821,9 @@ function renderKnowledge(snapshot) {
 function renderAgent(snapshot) {
   const a = snapshot.agent || {};
   const normalized = normalizeAgentState(a.state, a.details);
+  const sessionCount = snapshot.sessionCount ?? (a.details || normalized);
   els.agentStateLabel.textContent = a.state || normalized;
-  els.agentDetails.textContent = `${a.label || 'David'} • ${a.details || normalized}`;
+  els.agentDetails.textContent = `${a.label || 'David'} • ${sessionCount} sessions`;
   paintSprite(normalized, a.frame || 0);
 }
 
@@ -866,6 +954,7 @@ async function login(password) {
 }
 
 async function logout() {
+  stopSessionsPoller();
   await fetch('/api/logout', { method: 'POST' }).catch(() => {});
   if (state.socket) {
     try { state.socket.close(); } catch {}
@@ -892,7 +981,7 @@ function renderSnapshot(snapshot) {
   els.terminalLabel.textContent = snapshot.loginIdentity || 'root@hermes';
   els.terminalPrompt.textContent = snapshot.terminal?.prompt || `${snapshot.loginIdentity || 'root@hermes'}:${snapshot.terminal?.cwd || snapshot.workingDir || '/'}#`;
 
-  renderProjects(snapshot);
+  renderSidebarAgent(snapshot);
   renderSessions(snapshot);
   renderQuickActions(snapshot);
   renderSystem(snapshot);
@@ -1115,7 +1204,7 @@ function initDragResize() {
   const workspace = $('#workspace');
 
   const applyLayout = () => {
-    if (window.matchMedia('(max-width: 1200px)').matches || state.terminalFullscreen || !workspace) return;
+    if (window.matchMedia('(max-width: 1200px)').matches || state.terminalFullscreen || state.explorerFullscreen || !workspace) return;
     const rect = workspace.getBoundingClientRect();
     panels.forEach((panel) => {
       const x = Number(panel.dataset.x || '0');
@@ -1143,7 +1232,7 @@ function initDragResize() {
     const resize = panel.querySelector('.resize-handle');
 
     handle?.addEventListener('pointerdown', (ev) => {
-      if (!state.layoutEditMode || window.matchMedia('(max-width: 1200px)').matches || state.terminalFullscreen) return;
+      if (!state.layoutEditMode || window.matchMedia('(max-width: 1200px)').matches || state.terminalFullscreen || state.explorerFullscreen) return;
       ev.preventDefault();
       panel.classList.add('dragging');
       const startX = ev.clientX;
@@ -1165,7 +1254,7 @@ function initDragResize() {
     });
 
     resize?.addEventListener('pointerdown', (ev) => {
-      if (!state.layoutEditMode || window.matchMedia('(max-width: 1200px)').matches || state.terminalFullscreen) return;
+      if (!state.layoutEditMode || window.matchMedia('(max-width: 1200px)').matches || state.terminalFullscreen || state.explorerFullscreen) return;
       ev.preventDefault();
       ev.stopPropagation();
       panel.classList.add('resizing');
@@ -1209,8 +1298,12 @@ function bindUi() {
   });
   els.logoutBtn.addEventListener('click', logout);
   els.terminalFullscreenBtn?.addEventListener('click', () => setTerminalFullscreen(!state.terminalFullscreen));
+  els.explorerFullscreenBtn?.addEventListener('click', () => setExplorerFullscreen(!state.explorerFullscreen));
   window.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && state.terminalFullscreen) setTerminalFullscreen(false);
+    if (ev.key === 'Escape') {
+      if (state.terminalFullscreen) setTerminalFullscreen(false);
+      if (state.explorerFullscreen) setExplorerFullscreen(false);
+    }
   });
   window.addEventListener('resize', syncTopbarOffset);
   window.visualViewport?.addEventListener('resize', syncTopbarOffset);
@@ -1311,6 +1404,7 @@ async function boot() {
     connectWs();
     await loadLayoutState();
     await fetchSnapshot();
+    startSessionsPoller();
   } else {
     setLocked(true);
   }

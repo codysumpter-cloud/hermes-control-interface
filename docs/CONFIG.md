@@ -55,7 +55,7 @@ HERMES_HOME=/opt/hermes npm start
 
 **Default:** parent directory of the repo (e.g. `/root/projects` if installed in `/root/projects/hermes-control-interface`)
 
-Root directory shown in the projects explorer panel.
+Root directory for project-level operations. The sidebar projects section was removed in v0.8.x — this variable is retained for future use.
 
 ```bash
 HERMES_PROJECTS_ROOT=/home/me/code npm start
@@ -80,7 +80,7 @@ Each root object:
 - `label` — display name shown in the UI
 - `root` — absolute filesystem path
 
-If not set, defaults to `[HERMES_PROJECTS_ROOT, HERMES_HOME]`.
+If not set, defaults to `[HERMES_HOME]` (i.e. `/root/.hermes`).
 
 ---
 

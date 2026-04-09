@@ -47,7 +47,6 @@ function parseExplorerRoots(raw) {
 }
 
 const ROOTS = parseExplorerRoots(process.env.HERMES_CONTROL_ROOTS) || [
-  { key: 'projects', label: PROJECTS_ROOT, root: PROJECTS_ROOT },
   { key: 'hermes', label: CONTROL_HOME, root: CONTROL_HOME },
 ];
 const IGNORED_DIRS = new Set([
@@ -66,7 +65,7 @@ app.use('/vendor/xterm-addon-fit', express.static(path.join(__dirname, 'node_mod
 
 const sessions = new Map();
 const events = [];
-let hermesSessionsCache = { at: 0, data: [] };
+let hermesSidebarSessionsCache = { at: 0, data: [] };
 const cronJobs = [
   { name: 'daily-memory-distill', status: 'ACTIVE', nextRun: Date.now() + 1000 * 60 * 60, lastRun: Date.now() - 1000 * 60 * 60 * 24 },
   { name: 'weekly-maintenance', status: 'ACTIVE', nextRun: Date.now() + 1000 * 60 * 60 * 24 * 2, lastRun: Date.now() - 1000 * 60 * 60 * 24 * 6 },
@@ -594,14 +593,38 @@ function maybeHandleSpecialTerminalCommand(command) {
 
 function getSessions() {
   const now = Date.now();
-  if (hermesSessionsCache.data.length && now - hermesSessionsCache.at < 10_000) {
-    return hermesSessionsCache.data;
+  if (hermesSidebarSessionsCache.data.length && now - hermesSidebarSessionsCache.at < 10_000) {
+    return hermesSidebarSessionsCache.data;
   }
 
   try {
-    const raw = execFileSync('bash', ['-lc', 'timeout 8s hermes sessions list 2>&1'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const raw = execFileSync('bash', ['-lc', 'timeout 8s hermes sessions list --limit 10 2>&1'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     const data = parseHermesSessionsList(raw);
-    hermesSessionsCache = { at: now, data };
+    hermesSidebarSessionsCache = { at: now, data };
+    return data;
+  } catch (error) {
+    log('sessions.list.error', error.message || 'failed to run hermes sessions list');
+    return Array.from(sessions.entries()).map(([id, messages]) => ({
+      id,
+      title: 'local chat',
+      preview: messages.at(-1)?.content?.slice(0, 90) || 'quiet',
+      lastActive: 'now',
+    }));
+  }
+}
+
+const hermesAllSessionsCache = { at: 0, data: [] };
+
+function getAllSessions() {
+  const now = Date.now();
+  if (hermesAllSessionsCache.data.length && now - hermesAllSessionsCache.at < 10_000) {
+    return hermesAllSessionsCache.data;
+  }
+
+  try {
+    const raw = execFileSync('bash', ['-lc', 'timeout 8s hermes sessions list --limit 250 2>&1'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const data = parseHermesSessionsList(raw);
+    hermesAllSessionsCache = { at: now, data };
     return data;
   } catch (error) {
     log('sessions.list.error', error.message || 'failed to run hermes sessions list');
@@ -753,7 +776,7 @@ function buildSpriteState() {
     coding: 'building',
     executing: 'running',
   }[state];
-  spriteState.details = `${getSessions().length} sessions • ${getProjects().length} projects`;
+  spriteState.details = `${getSessions().length} sessions`;
   spriteState.frame = Math.floor(elapsed / 500) % 3;
   return spriteState;
 }
@@ -766,9 +789,8 @@ function buildDashboardState(authed = false) {
     passwordRequired: true,
     authed,
     system: getSystem(),
-    agent: buildSpriteState(),
-    projects: getProjects(),
-    sessions: getSessions(),
+    sessionCount: sessions.size,
+    allSessions: getAllSessions(),
     cronJobs: getCronJobs(),
     quickActions,
     explorerRoots: ROOTS.map(buildExplorerRoot),
@@ -826,6 +848,18 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/dashboard-state', requireAuth, (req, res) => {
   res.json(buildDashboardState(true));
+});
+
+app.get('/api/sessions', requireAuth, (req, res) => {
+  // Short list for sidebar — limit 10, cached 10s
+  const data = getSessions();
+  res.json({ sessions: data, cachedAt: hermesSidebarSessionsCache.at });
+});
+
+app.get('/api/all-sessions', requireAuth, (req, res) => {
+  // Full list for agent panel — limit 250, cached 10s
+  const data = getAllSessions();
+  res.json({ sessions: data, cachedAt: hermesAllSessionsCache.at });
 });
 
 app.get('/api/explorer', requireAuth, (req, res) => {

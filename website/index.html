@@ -46,9 +46,15 @@
 
   <div id="shell" class="locked">
     <aside id="sidebar">
-      <section class="side-section">
-        <div class="side-title">Projects</div>
-        <div id="projects-list" class="list"></div>
+      <section class="side-section" id="sidebar-agent-section">
+        <div class="side-title">David Bayendor</div>
+        <div id="sidebar-agent-body" class="sidebar-agent-body">
+          <canvas id="sidebar-agent-sprite" class="sidebar-agent-sprite" width="64" height="72"></canvas>
+          <div class="sidebar-agent-info">
+            <div id="sidebar-agent-state" class="sidebar-agent-state">idle</div>
+            <div id="sidebar-agent-details" class="sidebar-agent-details">standby</div>
+          </div>
+        </div>
       </section>
       <section class="side-section">
         <div class="side-title">Sessions</div>
@@ -57,10 +63,6 @@
       <section class="side-section">
         <div class="side-title">Quick actions</div>
         <div id="quick-actions" class="quick-actions"></div>
-      </section>
-      <section class="side-section footer-note">
-        <div class="side-title">Signal</div>
-        <div class="small-meta">live bus: <span id="bus-state">locked</span><br>ws path: /ws<br>fallback: polling every 5s</div>
       </section>
     </aside>
 
@@ -97,6 +99,7 @@
             <div class="panel-head-right">
               <span class="mini-dot amber"></span>
               <span class="mini-label" id="file-status">idle</span>
+              <button id="explorer-fullscreen-btn" class="ghost-btn panel-action" type="button">fullscreen</button>
             </div>
           </div>
           <div class="panel-body explorer-body">
