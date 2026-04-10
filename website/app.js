@@ -605,7 +605,6 @@ function renderAgentList(snapshot) {
     const activeClass = p.active ? 'active-profile' : '';
     const modelName = p.model.length > 22 ? p.model.slice(0, 20) + '…' : p.model;
     const toggleLabel = running ? 'stop' : 'start';
-    const toggleAction = running ? 'stop' : 'start';
     return `
       <div class="agent-item ${activeClass}" data-profile="${escapeHtml(p.name)}">
         <div class="agent-row">
@@ -615,29 +614,30 @@ function renderAgentList(snapshot) {
         </div>
         <div class="agent-meta">
           <span class="agent-model">${escapeHtml(modelName)}</span>
-          <button class="gw-toggle ${statusClass}" onclick="toggleGateway('${escapeHtml(p.name)}','${toggleAction}')" title="gateway ${toggleLabel}">${toggleLabel}</button>
+          <button class="gw-toggle ${statusClass}" data-gw-profile="${escapeHtml(p.name)}" data-gw-action="${running ? 'stop' : 'start'}" title="gateway ${toggleLabel}">${toggleLabel}</button>
         </div>
       </div>`;
   }).join('');
 }
 
-window.toggleGateway = async function(profile, action) {
+async function toggleGateway(profile, action) {
   try {
+    const h = { 'Content-Type': 'application/json' };
+    if (state.csrfToken) h['X-CSRF-Token'] = state.csrfToken;
     const res = await fetch(`/api/gateway/${profile}/${action}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: h,
     });
     const data = await res.json();
     if (data.ok) {
-      // Refresh dashboard to update gateway status
-      loadState();
+      fetchSnapshot();
     } else {
       console.error('Gateway toggle failed:', data);
     }
   } catch (e) {
     console.error('Gateway toggle error:', e);
   }
-};
+}
 
 function renderSystem(snapshot) {
   const s = snapshot.system || {};
@@ -1622,6 +1622,15 @@ function bindUi() {
 
   els.refreshBtn.addEventListener('click', fetchSnapshot);
   document.getElementById('auto-refresh-btn')?.addEventListener('click', toggleAutoRefresh);
+
+  // Gateway toggle — event delegation (CSP-safe, no inline onclick)
+  els.agentList?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.gw-toggle');
+    if (!btn) return;
+    const profile = btn.dataset.gwProfile;
+    const action = btn.dataset.gwAction;
+    if (profile && action) toggleGateway(profile, action);
+  });
 
   // Log panel bindings
   document.querySelectorAll('.log-tab').forEach(tab => {

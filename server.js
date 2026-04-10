@@ -318,7 +318,7 @@ function startLogStream(logType, level, socket) {
   stopLogStream();
   const args = ['logs', logType || 'agent', '-f', '-n', '200'];
   if (level) args.push('--level', level);
-  logStream.proc = spawn('hermes', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  logStream.proc = spawn('hermes', args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PYTHONUNBUFFERED: '1' } });
   logStream.type = logType || 'agent';
   logStream.level = level || 'all';
   logStream.clients.add(socket);
