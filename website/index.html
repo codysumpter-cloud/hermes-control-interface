@@ -46,6 +46,12 @@
   </header>
 
   <div id="toast-container"></div>
+  <div id="loading-overlay" class="overlay" style="display:flex;align-items:center;justify-content:center;background:rgba(14,18,27,0.95);z-index:999;">
+    <div style="text-align:center;color:#ede6d4;font-family:'JetBrains Mono',monospace;">
+      <div style="font-size:14px;margin-bottom:8px;">Loading dashboard…</div>
+      <div style="font-size:11px;color:#6b7280;">Fetching sessions, cron, tokens</div>
+    </div>
+  </div>
 
   <div id="shell" class="locked">
     <aside id="sidebar">

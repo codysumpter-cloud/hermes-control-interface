@@ -1034,6 +1034,7 @@ app.post('/api/file', requireCsrf, (req, res) => {
 app.post('/api/terminal/exec', requireCsrf, (req, res) => {
   const command = String(req.body?.command || '').trim();
   if (!command) return res.status(400).json({ error: 'command required' });
+  if (command.length > 4096) return res.status(400).json({ error: 'command too long (max 4096 chars)' });
   log('terminal.input', command.slice(0, 120));
   try {
     const special = maybeHandleSpecialTerminalCommand(command);
@@ -1198,10 +1199,14 @@ app.post('/api/avatar', requireCsrf, (req, res) => {
   if (!dataUrl.startsWith('data:image/') || !dataUrl.includes(';base64,')) {
     return res.status(400).json({ error: 'invalid image data' });
   }
-  // Extract base64 part and validate it's not empty
+  // Extract base64 part and validate size (max 5MB decoded)
   const b64Part = dataUrl.split(';base64,')[1];
   if (!b64Part || b64Part.length < 10) {
     return res.status(400).json({ error: 'invalid image data' });
+  }
+  const decodedSize = Math.ceil(b64Part.length * 0.75);
+  if (decodedSize > 5 * 1024 * 1024) {
+    return res.status(400).json({ error: 'image too large (max 5MB)' });
   }
   writeAvatarOverride(dataUrl);
   log('avatar.uploaded', `len ${dataUrl.length}`);
@@ -1277,6 +1282,7 @@ wss.on('connection', async (socket, req) => {
       if (msg.type === 'ping') socket.send(JSON.stringify({ type: 'pong', ts: Date.now() }));
       if (msg.type === 'terminal-input' && socket.authed) {
         const data = String(msg.data || '');
+        if (data.length > 4096) return;
         const command = data.replace(/[\r\n]+$/g, '');
         if (/^\/cron\s+/i.test(command)) {
           try {

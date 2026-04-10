@@ -1599,6 +1599,9 @@ async function boot() {
   } else {
     setLocked(true);
   }
+  // Hide loading overlay
+  const loadingOverlay = document.getElementById('loading-overlay');
+  if (loadingOverlay) loadingOverlay.style.display = 'none';
 }
 
 boot();

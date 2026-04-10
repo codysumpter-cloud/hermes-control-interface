@@ -51,16 +51,33 @@ else
 
   cp .env.example .env
 
-  # Generate secure secrets if placeholders are detected
-  if grep -q "^HERMES_CONTROL_PASSWORD=.*\*\*\*" .env 2>/dev/null; then
-    NEW_PASS=$(openssl_rand | cut -c1-32)
-    sed -i "s/^HERMES_CONTROL_PASSWORD=.*/HERMES_CONTROL_PASSWORD=$NEW_PASS/" .env
-    info "Generated HERMES_CONTROL_PASSWORD"
+  # Generate secure secrets
+  if grep -q "^HERMES_CONTROL_PASSWORD=*** .env 2>/dev/null; then
+    NEW_PASS=$(openssl_rand | cut -c1-24)
+    # Hash with bcrypt and save
+    HASHED=$(node -e "require('bcrypt').hashSync('${NEW_PASS}', 10)" 2>/dev/null || echo "")
+    if [[ -n "$HASHED" ]]; then
+      sed -i "s|^HERMES_CONTROL_PASSWORD=.*|HERMES_CONTROL_PASSWORD=${HASHED}|" .env
+      info "Generated and hashed HERMES_CONTROL_PASSWORD"
+      echo ""
+      warn "SAVE THIS PASSWORD — it will NOT be shown again:"
+      echo -e "  ${BOLD}${NEW_PASS}${RESET}"
+      echo ""
+    else
+      # Fallback: save plaintext (user must run reset-password.sh later)
+      sed -i "s|^HERMES_CONTROL_PASSWORD=.*|HERMES_CONTROL_PASSWORD=${NEW_PASS}|" .env
+      warn "bcrypt not available — password saved as plaintext"
+      warn "Run 'bash reset-password.sh' after install to hash it"
+      echo ""
+      warn "SAVE THIS PASSWORD:"
+      echo -e "  ${BOLD}${NEW_PASS}${RESET}"
+      echo ""
+    fi
   fi
 
   if grep -q "^HERMES_CONTROL_SECRET=.*\*\*\*" .env 2>/dev/null; then
-    NEW_SECRET=$(openssl_rand)
-    sed -i "s/^HERMES_CONTROL_SECRET=.*/HERMES_CONTROL_SECRET=$NEW_SECRET/" .env
+    NEW_SECRET=$(openssl_rand | cut -c1-64)
+    sed -i "s|^HERMES_CONTROL_SECRET=.*|HERMES_CONTROL_SECRET=${NEW_SECRET}|" .env
     info "Generated HERMES_CONTROL_SECRET"
   fi
 
@@ -187,13 +204,14 @@ fi
 bold ""
 bold "Setup complete!"
 echo ""
-echo "  1. Edit .env and set a strong password:"
-echo "     $REPO_ROOT/.env"
-echo ""
-echo "  2. Start the server:"
+echo "  1. Start the server:"
 echo "     npm start"
 echo ""
-echo "  3. Open http://$(hostname -I | awk '{print $1}'):10272"
+echo "  2. Open the dashboard:"
+echo "     http://$(hostname -I | awk '{print $1}'):10272"
+echo ""
+echo "  To reset password later:"
+echo "     bash reset-password.sh"
 echo ""
 echo "  For HTTPS + auto-start, enable the systemd service."
 echo ""
