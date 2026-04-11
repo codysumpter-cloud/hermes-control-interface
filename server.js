@@ -1068,8 +1068,13 @@ function verifyPassword(password) {
 app.get('/api/auth/me', (req, res) => {
   const user = getCurrentUser(req);
   if (!user) return res.status(401).json({ ok: false });
-  const csrfToken = deriveCsrfToken(parseCookies(req)[AUTH_COOKIE]);
-  res.json({ ok: true, user: { username: user.username, role: user.role }, csrfToken });
+  res.json({ ok: true, user: { username: user.username, role: user.role } });
+});
+
+// Check if first run (no rate limit, no auth required)
+app.get('/api/auth/status', (req, res) => {
+  const users = loadUsers();
+  res.json({ ok: true, first_run: users.length === 0, user_count: users.length });
 });
 
 // First-run setup (create admin)

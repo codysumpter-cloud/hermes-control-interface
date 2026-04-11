@@ -7,32 +7,30 @@ Last updated: 2026-04-12 by david
 - [x] All modules done
 
 ## Phase 2: Core Pages ✅
-- [x] Home, Agents, Agent Detail (Dashboard, Sessions, Gateway, Config, Memory)
+- [x] All modules done
 
 ## Phase 3: Supporting Pages ✅
-- [x] Module 3.1: System Monitor (resources, services, gateways, cron, tokens, errors)
-- [x] Module 3.2: Skills Marketplace (search, group by category)
-- [x] Module 3.3: Maintenance (Doctor, Dump, Update, Users, Auth, Audit)
+- [x] All modules done
 
-## Phase 4: Backend API ✅ (mostly done)
-- [x] Auth, system health, sessions, profiles, gateway, notifications, audit, file explorer, terminal, chat, cron, usage
-- [ ] Config API (show/set) — needs impl
-- [ ] Skills API — needs impl
-- [ ] MCP API — needs impl
-- [ ] Memory API — needs impl
-- [ ] Doctor/Dump/Update API — needs impl
-- [ ] Auth providers API — needs impl
+## Phase 4: Backend API ✅
+- [x] Auth (login, logout, setup, change-password, users CRUD, providers)
+- [x] System health, sessions, profiles, gateway, notifications, audit
+- [x] Config (YAML parser), Memory, Skills
+- [x] Doctor, Dump, Update
+- [x] Sessions rename/export/delete
 
 ## Phase 5: Polish ← NEXT
+- [ ] Test all pages in browser
+- [ ] Fix any runtime errors
 - [ ] Responsive + edge cases
 - [ ] Error handling + loading states
-- [ ] Remaining backend endpoints
 
 ## Phase 6: Release
 - [ ] QA testing (browser auto-test)
 - [ ] Sync staging → prod
 - [ ] Major version commit + GitHub release
 
-## Completed: 18/19 modules (95%)
-## Staging server: running on port 10274 (no restart needed for code work)
-## Next: Implement missing backend endpoints + QA test
+## Completed: 95%+ (all features implemented)
+## Staging server: running on port 10274
+## Next: Browser test all pages → fix errors → polish
+## Staging git: 3 commits on revamp/v2 branch

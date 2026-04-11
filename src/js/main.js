@@ -40,22 +40,17 @@ async function checkAuth() {
     if (res.ok) {
       const data = await res.json();
       state.user = data.user;
-      state.csrfToken = data.csrfToken || '';
+      state.csrfToken = data.csrfToken;
       showApp();
       return true;
     }
   } catch {}
 
-  // Check if first run (no users exist)
+  // Check if first run (no rate limit)
   try {
-    const testLogin = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: '_', password: '_' }),
-      credentials: 'include',
-    });
-    const data = await testLogin.json();
-    if (data.error === 'first_run') {
+    const statusRes = await fetch('/api/auth/status');
+    const statusData = await statusRes.json();
+    if (statusData.first_run) {
       showSetup();
       return false;
     }
