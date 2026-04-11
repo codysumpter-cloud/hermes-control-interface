@@ -456,23 +456,437 @@ async function loadAgentDashboard(container, name) {
 
 // Agent tab stubs (will implement per module)
 async function loadAgentSessions(container, name) {
-  container.innerHTML = `<div class="card"><div class="card-title">Sessions</div><div class="loading">Loading sessions for ${name}...</div></div>`;
-  // TODO: Module 2.4
+  container.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;">
+      <input type="text" id="session-search" placeholder="Search sessions..." style="flex:1;" />
+      <button class="btn btn-ghost" onclick="loadAgentSessions(document.getElementById('agent-tab-content'), '${name}')">↻ Refresh</button>
+    </div>
+    <div id="sessions-table">
+      <div class="loading">Loading sessions for ${name}...</div>
+    </div>
+  `;
+
+  try {
+    const res = await api('/api/all-sessions');
+    const tableEl = document.getElementById('sessions-table');
+
+    if (!res.ok || !res.sessions || res.sessions.length === 0) {
+      tableEl.innerHTML = '<div class="card"><div class="card-title">No sessions found</div></div>';
+      return;
+    }
+
+    // Filter by profile if sessions have profile info, otherwise show all
+    const sessions = res.sessions;
+
+    function renderSessions(filter = '') {
+      const filtered = filter
+        ? sessions.filter(s =>
+            (s.title || '').toLowerCase().includes(filter) ||
+            (s.id || '').toLowerCase().includes(filter) ||
+            (s.source || '').toLowerCase().includes(filter)
+          )
+        : sessions;
+
+      if (filtered.length === 0) {
+        tableEl.innerHTML = '<div class="card"><div class="card-title">No matching sessions</div></div>';
+        return;
+      }
+
+      tableEl.innerHTML = `
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Session ID</th>
+                <th>Title</th>
+                <th>Source</th>
+                <th>Messages</th>
+                <th>Updated</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtered.slice(0, 100).map(s => `
+                <tr>
+                  <td class="mono" style="font-size:11px;">${s.id || '—'}</td>
+                  <td>${s.title || 'Untitled'}</td>
+                  <td><span class="badge">${s.source || '—'}</span></td>
+                  <td>${s.message_count ?? '—'}</td>
+                  <td style="font-size:11px;color:var(--fg-muted);">${s.updated_at ? new Date(s.updated_at).toLocaleDateString() : '—'}</td>
+                  <td>
+                    <div style="display:flex;gap:4px;">
+                      <button class="btn btn-ghost btn-sm" onclick="resumeSession('${s.id}')" title="Resume in CLI">▶</button>
+                      <button class="btn btn-ghost btn-sm" onclick="renameSession('${s.id}', '${(s.title || '').replace(/'/g, "\\'")}')" title="Rename">✎</button>
+                      <button class="btn btn-ghost btn-sm" onclick="exportSession('${s.id}')" title="Export">↓</button>
+                      <button class="btn btn-ghost btn-sm btn-danger" onclick="deleteSession('${s.id}', '${name}')" title="Delete">×</button>
+                    </div>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:var(--fg-muted);">
+          Showing ${Math.min(filtered.length, 100)} of ${filtered.length} sessions
+        </div>
+      `;
+    }
+
+    renderSessions();
+
+    // Search handler
+    document.getElementById('session-search')?.addEventListener('input', (e) => {
+      renderSessions(e.target.value.toLowerCase());
+    });
+
+  } catch (e) {
+    container.innerHTML = `<div class="card"><div class="card-title">Error</div><div class="error-msg">${e.message}</div></div>`;
+  }
+}
+
+async function resumeSession(sessionId) {
+  // Copy resume command to clipboard
+  const cmd = `hermes -p ${state.currentAgent || 'david'} -r ${sessionId}`;
+  try {
+    await navigator.clipboard.writeText(cmd);
+    showToast('Resume command copied! Paste in CLI.', 'success');
+  } catch {
+    showToast(`Run: ${cmd}`, 'info');
+  }
+}
+
+async function renameSession(sessionId, currentTitle) {
+  const newTitle = prompt('New session title:', currentTitle);
+  if (newTitle === null || newTitle === currentTitle) return;
+  try {
+    const csrfToken = state.csrfToken || '';
+    await api(`/api/sessions/${sessionId}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+      body: JSON.stringify({ title: newTitle }),
+    });
+    showToast('Session renamed', 'success');
+    loadAgentSessions(document.getElementById('agent-tab-content'), state.currentAgent);
+  } catch (e) {
+    showToast('Rename failed: ' + e.message, 'error');
+  }
+}
+
+async function exportSession(sessionId) {
+  try {
+    const res = await api(`/api/sessions/${sessionId}/export`);
+    if (res.ok) {
+      // Download as JSON
+      const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `session-${sessionId}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Session exported', 'success');
+    }
+  } catch (e) {
+    showToast('Export failed: ' + e.message, 'error');
+  }
+}
+
+async function deleteSession(sessionId, profileName) {
+  if (!confirm(`Delete session ${sessionId}?`)) return;
+  try {
+    const csrfToken = state.csrfToken || '';
+    await api(`/api/sessions/${sessionId}`, {
+      method: 'DELETE',
+      headers: { 'X-CSRF-Token': csrfToken },
+    });
+    showToast('Session deleted', 'success');
+    loadAgentSessions(document.getElementById('agent-tab-content'), profileName);
+  } catch (e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
 }
 
 async function loadAgentGateway(container, name) {
-  container.innerHTML = `<div class="card"><div class="card-title">Gateway</div><div class="loading">Loading gateway for ${name}...</div></div>`;
-  // TODO: Module 2.5
+  container.innerHTML = `<div class="loading">Loading gateway for ${name}...</div>`;
+
+  try {
+    const res = await api(`/api/gateway/${name}`);
+    const ok = res.ok;
+    const active = ok && res.active;
+
+    container.innerHTML = `
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-title">Gateway Service</div>
+          <div class="stat-row"><span class="stat-label">Service</span><span class="stat-value">${res.service || '—'}</span></div>
+          <div class="stat-row"><span class="stat-label">Status</span><span class="stat-value ${active ? 'status-ok' : 'status-off'}">${active ? '● Running' : '○ Stopped'}</span></div>
+          <div class="stat-row"><span class="stat-label">Enabled</span><span class="stat-value">${res.enabled ? 'Yes' : 'No'}</span></div>
+          <div class="card-actions" style="margin-top:12px;">
+            <button class="btn btn-ghost" onclick="gatewayAction('${name}', 'start')" ${active ? 'disabled' : ''}>Start</button>
+            <button class="btn btn-ghost" onclick="gatewayAction('${name}', 'stop')" ${!active ? 'disabled' : ''}>Stop</button>
+            <button class="btn btn-ghost" onclick="gatewayAction('${name}', 'restart')">Restart</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Connections</div>
+          <div id="gateway-connections-${name}">
+            <div class="loading">Loading connections...</div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+          <div class="tabs" id="log-tabs" style="margin:0;">
+            <button class="tab active" data-log="agent">Agent</button>
+            <button class="tab" data-log="gateway">Gateway</button>
+            <button class="tab" data-log="errors">Errors</button>
+          </div>
+          <select id="log-level" style="margin-left:auto;">
+            <option value="">All levels</option>
+            <option value="WARNING">WARNING+</option>
+            <option value="ERROR">ERROR+</option>
+          </select>
+          <button class="btn btn-ghost" onclick="loadGatewayLogs('${name}')">↻ Refresh</button>
+        </div>
+        <div class="log-viewer" id="log-viewer">
+          <div class="loading">Loading logs...</div>
+        </div>
+      </div>
+    `;
+
+    // Load connections
+    loadGatewayConnections(name);
+
+    // Load logs
+    loadGatewayLogs(name);
+
+    // Log tab switching
+    document.getElementById('log-tabs')?.addEventListener('click', (e) => {
+      const tab = e.target.closest('.tab');
+      if (!tab) return;
+      document.querySelectorAll('#log-tabs .tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      loadGatewayLogs(name);
+    });
+
+  } catch (e) {
+    container.innerHTML = `<div class="card"><div class="card-title">Error</div><div class="error-msg">${e.message}</div></div>`;
+  }
+}
+
+async function loadGatewayConnections(name) {
+  const el = document.getElementById(`gateway-connections-${name}`);
+  if (!el) return;
+  try {
+    const statusRes = await api(`/api/gateway/${name}`);
+    // Parse connections from status — for now show basic info
+    el.innerHTML = `
+      <div class="stat-row"><span class="stat-label">WhatsApp</span><span class="stat-value ${statusRes.active ? 'status-ok' : 'status-off'}">${statusRes.active ? '● connected' : '○ disconnected'}</span></div>
+      <div class="stat-row"><span class="stat-label">Telegram</span><span class="stat-value status-off">○ not configured</span></div>
+      <div class="stat-row"><span class="stat-label">Discord</span><span class="stat-value status-off">○ not configured</span></div>
+    `;
+  } catch {
+    el.innerHTML = '<div class="stat-row"><span class="stat-label">Error loading connections</span></div>';
+  }
+}
+
+async function loadGatewayLogs(name) {
+  const viewer = document.getElementById('log-viewer');
+  if (!viewer) return;
+  viewer.innerHTML = '<div class="loading">Loading logs...</div>';
+
+  const activeTab = document.querySelector('#log-tabs .tab.active')?.dataset.log || 'agent';
+  const level = document.getElementById('log-level')?.value || '';
+
+  try {
+    const url = `/api/gateway/${name}/logs?log=${activeTab}&lines=100${level ? '&level=' + level : ''}`;
+    const res = await api(url);
+    if (res.ok) {
+      viewer.innerHTML = `<pre style="margin:0;font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;color:var(--fg-muted);">${escapeHtml(res.logs || 'No logs')}</pre>`;
+    } else {
+      viewer.innerHTML = '<div class="empty">No logs available</div>';
+    }
+  } catch (e) {
+    viewer.innerHTML = `<div class="error-msg">${e.message}</div>`;
+  }
+}
+
+async function gatewayAction(profile, action) {
+  if (action === 'stop' && !confirm(`Stop gateway for ${profile}?`)) return;
+  try {
+    const csrfToken = state.csrfToken || '';
+    const res = await api(`/api/gateway/${profile}/${action}`, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrfToken },
+    });
+    if (res.ok) {
+      showToast(`Gateway ${action} successful`, 'success');
+      loadAgentGateway(document.getElementById('agent-tab-content'), profile);
+    } else {
+      showToast(`Gateway ${action} failed: ${res.error || 'Unknown error'}`, 'error');
+    }
+  } catch (e) {
+    showToast(`Gateway ${action} failed: ${e.message}`, 'error');
+  }
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 async function loadAgentConfig(container, name) {
-  container.innerHTML = `<div class="card"><div class="card-title">Config</div><div class="loading">Loading config for ${name}...</div></div>`;
-  // TODO: Module 2.6
+  container.innerHTML = `<div class="loading">Loading config for ${name}...</div>`;
+
+  try {
+    const res = await api(`/api/config/${name}`);
+    if (!res.ok) {
+      container.innerHTML = `<div class="card"><div class="card-title">Config</div><div class="error-msg">${res.error || 'Failed to load config'}</div></div>`;
+      return;
+    }
+
+    const config = res.config || {};
+    const categories = [
+      { key: 'model', label: 'Model & Provider', icon: '⚡' },
+      { key: 'agent', label: 'Agent Behavior', icon: '🤖' },
+      { key: 'terminal', label: 'Terminal', icon: '💻' },
+      { key: 'display', label: 'Display & Streaming', icon: '🖥' },
+      { key: 'compression', label: 'Context & Compression', icon: '📦' },
+      { key: 'mcp', label: 'MCP Servers', icon: '🔌' },
+    ];
+
+    container.innerHTML = `
+      <div style="margin-bottom:12px;">
+        <div class="tabs" id="config-tabs" style="margin:0;">
+          ${categories.map((c, i) => `<button class="tab ${i === 0 ? 'active' : ''}" data-cat="${c.key}">${c.icon} ${c.label}</button>`).join('')}
+          <button class="tab" data-cat="raw">📋 Raw YAML</button>
+        </div>
+      </div>
+      <div id="config-content">
+        <div class="loading">Loading...</div>
+      </div>
+    `;
+
+    function renderCategory(catKey) {
+      const contentEl = document.getElementById('config-content');
+      if (catKey === 'raw') {
+        contentEl.innerHTML = `
+          <div class="card">
+            <div class="card-title">Raw Config (read-only)</div>
+            <pre style="font-size:11px;white-space:pre-wrap;max-height:500px;overflow-y:auto;color:var(--fg-muted);">${escapeHtml(JSON.stringify(config, null, 2))}</pre>
+          </div>
+        `;
+        return;
+      }
+
+      const data = config[catKey] || {};
+      const entries = Object.entries(data);
+
+      if (entries.length === 0) {
+        contentEl.innerHTML = `<div class="card"><div class="card-title">${catKey}</div><div class="stat-row"><span class="stat-label">No settings configured</span></div></div>`;
+        return;
+      }
+
+      contentEl.innerHTML = `
+        <div class="card">
+          <div class="card-title">${categories.find(c => c.key === catKey)?.label || catKey}</div>
+          ${entries.map(([k, v]) => {
+            const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+            const isBool = typeof v === 'boolean';
+            const isNum = typeof v === 'number';
+            return `
+              <div class="stat-row">
+                <span class="stat-label">${k}</span>
+                <span class="stat-value">${isBool ? (v ? '✓ enabled' : '✗ disabled') : escapeHtml(val)}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    renderCategory(categories[0].key);
+
+    // Tab switching
+    document.getElementById('config-tabs')?.addEventListener('click', (e) => {
+      const tab = e.target.closest('.tab');
+      if (!tab) return;
+      document.querySelectorAll('#config-tabs .tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      renderCategory(tab.dataset.cat);
+    });
+
+  } catch (e) {
+    container.innerHTML = `<div class="card"><div class="card-title">Error</div><div class="error-msg">${e.message}</div></div>`;
+  }
 }
 
 async function loadAgentMemory(container, name) {
-  container.innerHTML = `<div class="card"><div class="card-title">Memory</div><div class="loading">Loading memory for ${name}...</div></div>`;
-  // TODO: Module 2.7
+  container.innerHTML = `<div class="loading">Loading memory for ${name}...</div>`;
+
+  try {
+    const [memoryRes, configRes] = await Promise.all([
+      api(`/api/memory/${name}`),
+      api(`/api/config/${name}`),
+    ]);
+
+    const provider = configRes.ok ? (configRes.config?.memory?.provider || 'built-in') : 'built-in';
+    const memory = memoryRes.ok ? memoryRes : {};
+
+    // Build provider-specific section
+    let providerSection = '';
+    if (provider === 'honcho') {
+      providerSection = `
+        <div class="card">
+          <div class="card-title">Honcho Memory</div>
+          <div class="stat-row"><span class="stat-label">Provider</span><span class="stat-value status-ok">honcho</span></div>
+          <div class="stat-row"><span class="stat-label">Status</span><span class="stat-value ${memory.honcho_connected ? 'status-ok' : 'status-off'}">${memory.honcho_connected ? '● Connected' : '○ Disconnected'}</span></div>
+          ${memory.peers ? `<div class="stat-row"><span class="stat-label">Peers</span><span class="stat-value">${memory.peers}</span></div>` : ''}
+          ${memory.sessions ? `<div class="stat-row"><span class="stat-label">Sessions</span><span class="stat-value">${memory.sessions}</span></div>` : ''}
+        </div>
+      `;
+    } else if (provider !== 'built-in') {
+      providerSection = `
+        <div class="card">
+          <div class="card-title">${provider} Memory</div>
+          <div class="stat-row"><span class="stat-label">Provider</span><span class="stat-value">${provider}</span></div>
+          <div class="stat-row"><span class="stat-label">Status</span><span class="stat-value">${memory.connected ? '● Connected' : '○ Unknown'}</span></div>
+        </div>
+      `;
+    } else {
+      providerSection = `
+        <div class="card">
+          <div class="card-title">External Provider</div>
+          <div class="stat-row"><span class="stat-label">Status</span><span class="stat-value">Built-in only (MEMORY.md + USER.md)</span></div>
+        </div>
+      `;
+    }
+
+    container.innerHTML = `
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-title">Built-in Memory</div>
+          <div class="stat-row"><span class="stat-label">MEMORY.md</span><span class="stat-value">${memory.memory_chars || 0} / 2200 chars</span></div>
+          <div style="margin-top:8px;">
+            <div style="background:var(--bg-panel);border-radius:4px;height:8px;overflow:hidden;">
+              <div style="width:${Math.min(100, ((memory.memory_chars || 0) / 2200) * 100)}%;height:100%;background:${((memory.memory_chars || 0) / 2200) > 0.9 ? 'var(--red)' : 'var(--green)'};border-radius:4px;transition:width 0.3s;"></div>
+            </div>
+          </div>
+          <div class="stat-row" style="margin-top:8px;"><span class="stat-label">USER.md</span><span class="stat-value">${memory.user_chars || 0} chars</span></div>
+        </div>
+        ${providerSection}
+      </div>
+      <div style="margin-top:16px;">
+        <div class="card">
+          <div class="card-title">Context Compression</div>
+          <div class="stat-row"><span class="stat-label">Enabled</span><span class="stat-value">${configRes.config?.compression?.enabled ? '✓ Yes' : '✗ No'}</span></div>
+          <div class="stat-row"><span class="stat-label">Threshold</span><span class="stat-value">${configRes.config?.compression?.threshold || '—'}</span></div>
+          <div class="stat-row"><span class="stat-label">Summary Model</span><span class="stat-value">${configRes.config?.compression?.summary_model || '—'}</span></div>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="card"><div class="card-title">Error</div><div class="error-msg">${e.message}</div></div>`;
+  }
 }
 
 async function loadMonitor(container) {
@@ -567,6 +981,30 @@ async function api(url, options = {}) {
     },
   });
   return res.json();
+}
+
+// ============================================
+// Toast Notifications
+// ============================================
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toast-container') || createToastContainer();
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(100%)';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+function createToastContainer() {
+  const el = document.createElement('div');
+  el.id = 'toast-container';
+  el.style.cssText = 'position:fixed;top:70px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
+  document.body.appendChild(el);
+  return el;
 }
 
 // ============================================
