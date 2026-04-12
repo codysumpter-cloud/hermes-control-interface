@@ -769,14 +769,18 @@ async function loadXtermAndConnect(command) {
 
     ws.onopen = () => {
       term.write('Connected.\r\n');
-      // Send command after delay (wait for PTY ready)
+      // Send command after delay (wait for PTY ready + flush ANSI garbage)
       setTimeout(() => {
         if (command && !commandSent) {
-          term.write(`\x1b[90m$ ${command}\x1b[0m\r\n`);
-          ws.send(JSON.stringify({ type: 'terminal-input', data: command + '\r' }));
-          commandSent = true;
+          // Clear terminal first to remove ANSI escape artifacts
+          ws.send(JSON.stringify({ type: 'terminal-input', data: 'clear\r' }));
+          setTimeout(() => {
+            term.write(`\x1b[90m$ ${command}\x1b[0m\r\n`);
+            ws.send(JSON.stringify({ type: 'terminal-input', data: command + '\r' }));
+            commandSent = true;
+          }, 500);
         }
-      }, 1600);
+      }, 2000);
     };
 
     ws.onmessage = (e) => {
@@ -1689,13 +1693,18 @@ function startNotifPolling() {
 // ============================================
 async function api(url, options = {}) {
   try {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+    // Add CSRF token for mutating requests
+    if (state.csrfToken && options.method && options.method !== 'GET') {
+      headers['X-CSRF-Token'] = state.csrfToken;
+    }
     const res = await fetch(url, {
       credentials: 'include',
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     });
     if (res.status === 401) {
       showToast('Session expired — please log in again', 'error');

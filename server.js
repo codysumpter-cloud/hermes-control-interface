@@ -1301,7 +1301,14 @@ app.get('/api/agent/status', requireAuth, async (req, res) => {
     // Parse key fields
     const model = grab('Model');
     const provider = grab('Provider');
-    const gatewayStatus = grab('Status');
+    // Gateway status — check system-level systemd (not user-level)
+    let gatewayStatus = 'unknown';
+    try {
+      const gwCheck = await shell("systemctl is-active hermes-gateway-* 2>/dev/null | head -1", '5s');
+      gatewayStatus = gwCheck.trim() === 'active' ? 'running' : 'stopped';
+    } catch {
+      gatewayStatus = grab('Status');
+    }
     const activeSessions = grab('Active');
 
     // Parse API keys (lines with ✓ or ✗)
