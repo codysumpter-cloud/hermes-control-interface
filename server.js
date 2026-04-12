@@ -24,12 +24,34 @@ function shell(cmd, timeout = '8s') {
   });
 }
 
+// Safer execution — no bash interpretation, direct args
+function execHermes(args, timeout = 30000) {
+  return new Promise((resolve) => {
+    execFile('hermes', args, {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024,
+      timeout,
+    }, (err, stdout) => {
+      resolve(err ? '' : stdout);
+    });
+  });
+}
+
 const PORT = Number(process.env.PORT || 10272);
 const CONTROL_PASSWORD = process.env.HERMES_CONTROL_PASSWORD;
 const CONTROL_SECRET = process.env.HERMES_CONTROL_SECRET;
 const AUTH_COOKIE = 'hermes_control_auth';
 const PROJECT_ROOT = __dirname;
 const PROJECTS_ROOT = process.env.HERMES_PROJECTS_ROOT || path.dirname(PROJECT_ROOT);
+
+// Cookie helper — conditionally adds Secure flag for HTTPS
+function setAuthCookie(res, token, maxAge = 86400) {
+  const secure = res.req?.secure || res.req?.get('X-Forwarded-Proto') === 'https';
+  res.setHeader('Set-Cookie', `${AUTH_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure ? '; Secure' : ''}`);
+}
+function clearAuthCookie(res) {
+  res.setHeader('Set-Cookie', `${AUTH_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+}
 const CONTROL_HOME = process.env.HERMES_CONTROL_HOME || path.join(os.homedir(), '.hermes');
 const CONTROL_STATE_DIR = path.join(CONTROL_HOME, 'control-interface');
 const AVATAR_OVERRIDE_PATH = path.join(CONTROL_STATE_DIR, 'avatar.dataurl');
@@ -249,15 +271,7 @@ function requireCsrf(req, res, next) {
   return res.status(403).json({ error: 'invalid CSRF token' });
 }
 
-function setAuthCookie(res) {
-  const token = createAuthToken();
-  res.setHeader('Set-Cookie', `${AUTH_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${24 * 60 * 60}`);
-  return token;
-}
-
-function clearAuthCookie(res) {
-  res.setHeader('Set-Cookie', `${AUTH_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
-}
+// (setAuthCookie and clearAuthCookie defined above at L37/L40)
 
 function getClientIp(req) {
   const fw = req.headers['x-forwarded-for'];
@@ -1155,7 +1169,7 @@ app.post('/api/auth/setup', loginRateLimiter, (req, res) => {
   if (!result.ok) return res.status(400).json(result);
 
   const authToken = createAuthToken(username, 'admin');
-  res.setHeader('Set-Cookie', `${AUTH_COOKIE}=${encodeURIComponent(authToken)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${24 * 60 * 60}`);
+  setAuthCookie(res, authToken);
   audit(username, 'admin', 'SETUP', 'first-run admin created');
   addNotification('success', `Admin account created: ${username}`);
   const csrfToken = deriveCsrfToken(authToken);
@@ -1183,7 +1197,7 @@ app.post('/api/auth/login', loginRateLimiter, (req, res) => {
   }
 
   const authToken = createAuthToken(user.username, user.role);
-  res.setHeader('Set-Cookie', `${AUTH_COOKIE}=${encodeURIComponent(authToken)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${24 * 60 * 60}`);
+  setAuthCookie(res, authToken);
   audit(user.username, user.role, 'LOGIN', `success from ${ip}`);
   const csrfToken = deriveCsrfToken(authToken);
   res.json({ ok: true, user: { username: user.username, role: user.role }, csrfToken });
@@ -2184,7 +2198,21 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Identity: root@hermes`);
 });
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({
+  server,
+  path: '/ws',
+  verifyClient: (info, done) => {
+    // Allow same-origin and localhost
+    const origin = info.req.headers.origin || '';
+    const host = info.req.headers.host || '';
+    if (!origin || origin.includes(host) || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      done(true);
+    } else {
+      log('websocket.rejected', `origin: ${origin}`);
+      done(false, 403, 'Forbidden');
+    }
+  },
+});
 
 async function broadcast() {
   const state = await buildDashboardState(true);
@@ -2278,6 +2306,18 @@ function shutdown(signal) {
   // Force exit after 5 seconds
   setTimeout(() => process.exit(1), 5000);
 }
+
+// Error handlers — prevent silent crashes
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[UNHANDLED REJECTION]', reason);
+  log('system.error', `unhandled rejection: ${reason?.message || reason}`);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', err);
+  log('system.error', `uncaught exception: ${err.message}`);
+  // Give time to log, then exit
+  setTimeout(() => process.exit(1), 1000);
+});
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
