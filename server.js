@@ -1319,6 +1319,10 @@ app.get('/api/usage', requireAuth, (req, res) => {
 app.get('/api/insights', requireAuth, async (req, res) => {
   const days = Math.min(365, Math.max(1, parseInt(req.query.days) || 7));
   const source = String(req.query.source || '').trim();
+  // Sanitize: only allow alphanumeric, dash, underscore, dot (prevent command injection)
+  if (source && !/^[a-zA-Z0-9_.\-]+$/.test(source)) {
+    return res.status(400).json({ ok: false, error: 'invalid source: only alphanumeric, dash, underscore, dot allowed' });
+  }
   const data = await getInsights(days, source);
   res.json({ ok: true, ...data, filter: { days, source: source || 'all' } });
 });
