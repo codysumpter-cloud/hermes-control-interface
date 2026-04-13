@@ -2402,6 +2402,10 @@ Object.assign(window, {
 // Expose for onclick handlers in templates
 window.loadUsage = loadUsage;
 window.fetchUsageData = fetchUsageData;
+window.showCreateCronModal = showCreateCronModal;
+window.cronAction = cronAction;
+window.cronRemove = cronRemove;
+window.loadCronJobs = loadCronJobs;
 window.openFileInEditor = openFileInEditor;
 window.saveCurrentFile = saveCurrentFile;
 window.loadFileExplorer = loadFileExplorer;
