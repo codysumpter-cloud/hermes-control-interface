@@ -3108,8 +3108,8 @@ app.post('/api/update', requireRole('admin'), (req, res) => {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, HERMES_HOME: path.join(os.homedir(), '.hermes'), TERM: 'dumb' },
   });
-  // Auto-answer any [Y/n] prompts — write 'y' to PTY master every 2s
-  const yesTick = setInterval(() => { try { proc.stdin.write('y\n'); } catch {} }, 2000);
+  // Auto-answer any [Y/n] prompts — write 'y\r' (PTY uses \r for Enter) every 2s
+  const yesTick = setInterval(() => { try { proc.stdin.write('y\r'); } catch {} }, 2000);
   let fullOutput = '';
   proc.stdout.on('data', (chunk) => {
     const text = stripAnsi(chunk.toString());
