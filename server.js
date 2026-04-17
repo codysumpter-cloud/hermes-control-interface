@@ -3026,12 +3026,12 @@ app.post('/api/backup', requireRole('admin'), async (req, res) => {
 // Import — upload and restore from zip
 app.post('/api/import', requireRole('admin'), (req, res) => {
   const multer = require('multer');
-  const upload = multer({ dest: '/tmp/', limits: { fileSize: 500 * 1024 * 1024 } }); // 500MB
+  const upload = multer({ dest: '/tmp/', limits: { fileSize: 5 * 1024 * 1024 * 1024 } }); // 5GB
   upload.single('backup')(req, res, async (err) => {
     if (err) return res.json({ ok: false, error: err.message });
     if (!req.file) return res.json({ ok: false, error: 'No file uploaded' });
     try {
-      const output = await shell(`hermes import ${req.file.path} --force 2>&1`, '120s');
+      const output = await shell(`hermes import ${req.file.path} --force 2>&1`, '300s');
       fs.unlink(req.file.path, () => {});
       audit(req.hciUser?.username || 'unknown', req.hciUser?.role || 'unknown', 'BACKUP_IMPORT', req.file.originalname);
       res.json({ ok: true, output });
