@@ -3638,7 +3638,7 @@ function renderNotifications() {
 
   // Load more button
   if (all.length > limit) {
-    listEl.innerHTML += `<div style="padding:8px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="loadMoreNotifs(${limit + 5})">Load more (${all.length - limit} remaining)</button></div>`;
+    listEl.innerHTML += `<div style="padding:8px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadMoreNotifs(${limit + 5})">Load more (${all.length - limit} remaining)</button></div>`;
   }
 }
 
