@@ -126,6 +126,7 @@ app.use(helmet({
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:", "blob:", "https://portal.nousresearch.com"],
       connectSrc: ["'self'", "ws:", "wss:"],
+      upgradeInsecureRequests: null,
     },
   },
   hsts: false,
