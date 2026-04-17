@@ -175,6 +175,10 @@ document.getElementById('setup-form')?.addEventListener('submit', async (e) => {
 // Navigation
 // ============================================
 function navigate(page, params = {}) {
+  // Cleanup previous page resources
+  stopLogsAutoRefresh();
+  if (state._logsDebounce) { clearTimeout(state._logsDebounce); state._logsDebounce = null; }
+
   state.page = page;
 
   // Update nav active state
