@@ -3104,10 +3104,12 @@ app.post('/api/update', requireRole('admin'), (req, res) => {
   res.write(`data: ${JSON.stringify({ type: 'progress', line: 'Starting Hermes update...' })}\n\n`);
   audit(req.hciUser?.username || 'unknown', req.hciUser?.role || 'unknown', 'HERMES_UPDATE', 'started');
 
-  const proc = spawn('script', ['-qfc', 'yes | hermes update --gateway', '/dev/null'], {
-    stdio: ['ignore', 'pipe', 'pipe'],
+  const proc = spawn('script', ['-qfc', 'hermes update --gateway', '/dev/null'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, HERMES_HOME: path.join(os.homedir(), '.hermes'), TERM: 'dumb' },
   });
+  // Auto-answer any [Y/n] prompts — write 'y' to PTY master every 2s
+  const yesTick = setInterval(() => { try { proc.stdin.write('y\n'); } catch {} }, 2000);
   let fullOutput = '';
   proc.stdout.on('data', (chunk) => {
     const text = stripAnsi(chunk.toString());
@@ -3122,6 +3124,7 @@ app.post('/api/update', requireRole('admin'), (req, res) => {
     if (text.trim()) res.write(`data: ${JSON.stringify({ type: 'progress', line: text.trim() })}\n\n`);
   });
   proc.on('close', (code) => {
+    clearInterval(yesTick);
     res.write(`data: ${JSON.stringify({ type: 'done', output: fullOutput.trim() })}\n\n`);
     res.end();
   });
