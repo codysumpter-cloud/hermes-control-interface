@@ -3108,23 +3108,29 @@ app.post('/api/update', requireRole('admin'), (req, res) => {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, HERMES_HOME: path.join(os.homedir(), '.hermes'), TERM: 'dumb' },
   });
-  // Auto-answer any [Y/n] prompts — write 'y\r' (PTY uses \r for Enter) every 2s
-  const yesTick = setInterval(() => { try { proc.stdin.write('y\r'); } catch {} }, 2000);
+  // Auto-answer any [Y/n] prompts — watch output for prompts, respond with 'Y\r' (PTY Enter)
   let fullOutput = '';
+  const answerPrompt = () => { try { proc.stdin.write('Y\r'); } catch {} };
   proc.stdout.on('data', (chunk) => {
     const text = stripAnsi(chunk.toString());
     fullOutput += text;
     text.split('\n').filter(l => l.trim()).forEach(line => {
       res.write(`data: ${JSON.stringify({ type: 'progress', line: line.trim() })}\n\n`);
     });
+    // Detect prompt and answer immediately
+    if (text.includes('[Y/n]') || text.includes('[y/N]') || text.includes('[y/n]') || text.includes('(y/n)') || text.includes('(Y/n)')) {
+      setTimeout(answerPrompt, 300);
+    }
   });
   proc.stderr.on('data', (chunk) => {
     const text = stripAnsi(chunk.toString());
     fullOutput += text;
     if (text.trim()) res.write(`data: ${JSON.stringify({ type: 'progress', line: text.trim() })}\n\n`);
+    if (text.includes('[Y/n]') || text.includes('[y/N]') || text.includes('[y/n]') || text.includes('(y/n)') || text.includes('(Y/n)')) {
+      setTimeout(answerPrompt, 300);
+    }
   });
   proc.on('close', (code) => {
-    clearInterval(yesTick);
     res.write(`data: ${JSON.stringify({ type: 'done', output: fullOutput.trim() })}\n\n`);
     res.end();
   });
