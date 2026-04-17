@@ -279,8 +279,19 @@ const events = [];
 // Sending a message uses --resume with the real hermes session ID
 
 // ── Gateway API Proxy (fast, structured events) ────────────────────
-const GATEWAY_API_BASE = 'http://127.0.0.1:8642';
 const GATEWAY_API_KEY = process.env.GATEWAY_API_KEY || 'hci-gateway-2026';
+
+// Profile → Gateway API port mapping
+const GATEWAY_PORTS = {
+  default: 8642,
+  soci: 8643,
+  cuan: 8644,
+  david: 8645,
+};
+function getGatewayBase(profile) {
+  const port = GATEWAY_PORTS[profile] || GATEWAY_PORTS.default;
+  return `http://127.0.0.1:${port}`;
+}
 
 // POST /api/gateway/responses — start a new agent run via Gateway API
 app.post('/api/gateway/responses', requireAuth, requirePerm('chat.use'), async (req, res) => {
@@ -297,13 +308,12 @@ app.post('/api/gateway/responses', requireAuth, requirePerm('chat.use'), async (
     const gwHeaders = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${GATEWAY_API_KEY}`,
-      ...(profile && profile !== 'default' ? { 'X-Hermes-Profile': profile } : {}),
     };
     if (session_id) {
       gwHeaders['X-Hermes-Session-Id'] = session_id;
     }
 
-    const gatewayRes = await fetch(`${GATEWAY_API_BASE}/v1/responses`, {
+    const gatewayRes = await fetch(`${getGatewayBase(profile || 'default')}/v1/responses`, {
       method: 'POST',
       headers: gwHeaders,
       body: JSON.stringify(gatewayBody),

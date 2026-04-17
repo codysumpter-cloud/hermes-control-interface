@@ -740,21 +740,12 @@ async function sendChatMessage() {
   if (btn) { btn.disabled = true; btn.style.display = 'none'; }
   if (stopBtn) stopBtn.style.display = 'inline-flex';
   try {
-    // Use Gateway API for default profile, CLI for other profiles
-    if (profile === 'default' || !profile) {
-      await sendViaGatewayAPI(text, profile, sessionId, contentDiv, messagesDiv, startTime);
-    } else {
-      await sendViaCLI(text, profile, sessionId, contentDiv, messagesDiv, startTime);
-    }
+    // All profiles use Gateway API (default, soci, cuan, david)
+    await sendViaGatewayAPI(text, profile, sessionId, contentDiv, messagesDiv, startTime);
   } catch (gwErr) {
-    console.warn('[Chat] Primary method failed, trying fallback:', gwErr.message);
+    console.warn('[Chat] Gateway API failed, falling back to CLI:', gwErr.message);
     try {
-      // Fallback: Gateway → CLI or CLI → Gateway
-      if (profile === 'default' || !profile) {
-        await sendViaCLI(text, profile, sessionId, contentDiv, messagesDiv, startTime);
-      } else {
-        await sendViaGatewayAPI(text, profile, sessionId, contentDiv, messagesDiv, startTime);
-      }
+      await sendViaCLI(text, profile, sessionId, contentDiv, messagesDiv, startTime);
     } catch (cliErr) {
       if (contentDiv) contentDiv.innerHTML = renderChatContent(fullContent) + '<div style="color:var(--red);margin-top:8px;">Error: ' + escapeHtml(cliErr.message) + '</div>';
     }
