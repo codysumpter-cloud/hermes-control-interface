@@ -2723,7 +2723,8 @@ app.put('/api/config/:profile', requireAuth, requireRole('admin'), async (req, r
     await shell(`cp "${configPath}" "${backupPath}" 2>/dev/null || true`);
 
     // Auto-inject api_server for Gateway API chat (first-time config)
-    const existingCfg = fs.existsSync(configPath) ? yaml.load(fs.readFileSync(configPath, 'utf8')) || {} : {};
+    const jsYaml = require('js-yaml');
+    const existingCfg = fs.existsSync(configPath) ? jsYaml.load(fs.readFileSync(configPath, 'utf8')) || {} : {};
     if (!existingCfg.platforms?.api_server?.enabled && !newConfig.platforms?.api_server?.enabled) {
       const usedPorts = new Set(Object.values(discoverGatewayPorts()));
       let port = 8650;
