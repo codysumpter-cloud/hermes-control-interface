@@ -2116,6 +2116,40 @@ app.post('/api/gateway/:profile/:action', requireCsrf, async (req, res) => {
   if (!action) return res.status(400).json({ error: 'invalid action (allowed: start, stop, restart, enable, disable)' });
 
   try {
+    // Auto-inject api_server config if starting/restarting and port is missing
+    if ((action === 'start' || action === 'restart') && !gatewayPorts[profile]) {
+      const confPath = profile === 'default'
+        ? path.join(HERMES_HOME, 'config.yaml')
+        : path.join(HERMES_HOME, 'profiles', profile, 'config.yaml');
+      if (fs.existsSync(confPath)) {
+        try {
+          const raw = fs.readFileSync(confPath, 'utf8');
+          const cfg = yaml.load(raw) || {};
+          if (!cfg.platforms?.api_server?.enabled) {
+            const existingPorts = discoverGatewayPorts();
+            let port = 8650;
+            while (Object.values(existingPorts).includes(port)) port++;
+            cfg.platforms = cfg.platforms || {};
+            cfg.platforms.api_server = {
+              enabled: true,
+              extra: {
+                host: '127.0.0.1',
+                port,
+                key: GATEWAY_API_KEY,
+                cors_origins: 'https://agent2.panji.me,https://agent.panji.me',
+              },
+            };
+            fs.writeFileSync(confPath, yaml.dump(cfg, { lineWidth: 120 }));
+            gatewayPorts = discoverGatewayPorts();
+            console.log(`[GatewayAction] Auto-injected api_server on port ${port} for ${profile}`);
+            addNotification('info', `Injected Gateway API config on port ${port} for ${profile}`);
+          }
+        } catch (injectErr) {
+          console.error(`[GatewayAction] Failed to inject api_server for ${profile}:`, injectErr.message);
+        }
+      }
+    }
+
     // Check if service exists first — try both names
     const svcs = getGatewayServiceName(profile);
     let svc = svcs.primary;
@@ -4081,11 +4115,7 @@ app.post('/api/profiles/create', requireRole('admin'), async (req, res) => {
     audit(req.hciUser?.username || 'unknown', req.hciUser?.role || 'unknown', 'PROFILE_CREATE', safeName);
     addNotification('success', `Profile created: ${safeName}`);
 
-    // Auto-inject Gateway API config + install gateway service
-    try {
-      await shell(`bash /root/projects/hci-staging/scripts/setup-gateway-service.sh --profile ${safeName} --user root --force 2>&1`, '30s');
-    } catch {}
-    // Auto-inject api_server config for Gateway API chat
+    // Auto-inject api_server config for Gateway API chat (after CLI writes config.yaml)
     try {
       const confPath = path.join(HERMES_HOME, 'profiles', safeName, 'config.yaml');
       console.log(`[ProfileCreate] Checking config at: ${confPath}, exists: ${fs.existsSync(confPath)}`);
@@ -4111,10 +4141,6 @@ app.post('/api/profiles/create', requireRole('admin'), async (req, res) => {
           };
           fs.writeFileSync(confPath, yaml.dump(cfg, { lineWidth: 120 }));
           console.log(`[ProfileCreate] Injected api_server on port ${port} for ${safeName}`);
-          // Start gateway service
-          try { await shell(`systemctl restart hermes-gateway-${safeName} 2>&1`, '15s'); } catch {}
-          // Refresh port discovery
-          gatewayPorts = discoverGatewayPorts();
           addNotification('info', `Gateway API enabled on port ${port} for ${safeName}`);
         } else {
           console.log(`[ProfileCreate] api_server already enabled for ${safeName}, skipping`);
@@ -4124,6 +4150,13 @@ app.post('/api/profiles/create', requireRole('admin'), async (req, res) => {
       console.error(`[ProfileCreate] Gateway API setup failed for ${safeName}:`, apiErr.message);
       addNotification('warning', `Profile created but Gateway API setup failed: ${apiErr.message}`);
     }
+
+    // Install gateway service (after config is finalized with api_server)
+    try {
+      await shell(`bash /root/projects/hci-staging/scripts/setup-gateway-service.sh --profile ${safeName} --user root --force 2>&1`, '30s');
+    } catch {}
+    // Refresh port discovery
+    gatewayPorts = discoverGatewayPorts();
 
     // Invalidate cache
     getProfiles.cache = { at: 0, data: [] };

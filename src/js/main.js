@@ -419,7 +419,7 @@ async function refreshChatSidebar() {
     let filtered = activeFilter === 'all' ? sessions : sessions.filter(s => s._source === activeFilter);
 
     // Sort by last activity (most recent first)
-    filtered.sort((a, b) => parseLastActive(a.lastActive) - parseLastActive(b.lastActive));
+    filtered.sort((a, b) => parseLastActive(b.lastActive) - parseLastActive(a.lastActive));
 
     // Render flat list — no grouping
     const currentSid = state._currentChatSession;
@@ -506,7 +506,7 @@ async function loadChatSession(sessionId) {
   const statsEl = document.getElementById('chat-status-session');
   const tokensEl = document.getElementById('chat-status-tokens');
   if (!container) return;
-  state._currentChatSession = sessionId || 0;
+  state._currentChatSession = sessionId || null;
   if (statsEl) statsEl.textContent = sessionId || '—';
   container.innerHTML = '<div class="loading">Loading messages...</div>';
 
@@ -905,7 +905,9 @@ async function sendViaGatewayAPI(text, profile, sessionId, contentDiv, messagesD
 
   await refreshChatSidebar();
   updateChatHeader();
-}function handleGatewayEvent(evt, contentDiv, messagesDiv, toolCards) {
+}
+
+function handleGatewayEvent(evt, contentDiv, messagesDiv, toolCards) {
   const t = evt.type;
   if (t === 'response.output_text.delta') {
     updateStreamContent(contentDiv, null, toolCards, messagesDiv);
