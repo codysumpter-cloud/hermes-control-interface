@@ -2174,6 +2174,18 @@ app.get('/api/gateway/:profile/health', requireAuth, async (req, res) => {
     checks.port_discovered = !!port;
     if (!port) issues.push('Gateway port not configured in config.yaml (platforms.api_server.extra.port)');
 
+    // Check 1b: Port conflict (another profile using same port)
+    checks.port_unique = true;
+    if (port) {
+      const otherProfiles = Object.entries(gatewayPorts)
+        .filter(([name, p]) => name !== profile && p === port)
+        .map(([name]) => name);
+      if (otherProfiles.length > 0) {
+        checks.port_unique = false;
+        issues.push(`Port ${port} is also used by: ${otherProfiles.join(', ')}. Run setup to assign a unique port.`);
+      }
+    }
+
     // Check 2: Gateway process running
     let gatewayRunning = false;
     try {
