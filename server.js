@@ -3675,6 +3675,8 @@ app.post('/api/sessions/:id/rename', requireCsrf, async (req, res) => {
     const profArg = profile ? ['-p', sanitizeProfileName(profile)] : [];
     const args = [...profArg, 'sessions', 'rename', sessionId, title];
     const output = await execHermes(args);
+    // Invalidate sessions cache so sidebar refresh picks up the rename
+    hermesAllSessionsCache = { at: 0, data: [], key: '' };
     audit(req.hciUser?.username || 'unknown', req.hciUser?.role || 'unknown', 'SESSION_RENAME', `${req.params.id} → ${title}`);
     addNotification('info', `Session renamed: ${sessionId.slice(0, 12)}… → ${title}`);
     res.json({ ok: true, output });
