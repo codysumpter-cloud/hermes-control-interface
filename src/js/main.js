@@ -260,73 +260,6 @@ async function loadChat(container) {
   const sidebarCollapsed = state.chatSidebarOpen ? '' : ' collapsed';
 
   container.innerHTML = `
-    <style>
-      .chat-layout { display: flex; height: calc(100vh - 56px - 48px); margin: -24px; overflow: hidden; }
-      .chat-sidebar { width: 280px; min-width: 280px; background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: transform 0.3s ease, width 0.3s ease, min-width 0.3s ease, padding 0.3s ease; overflow: hidden; flex-shrink: 0; height: 100%; }
-      .chat-sidebar.collapsed { transform: translateX(-100%); width: 0; min-width: 0; padding: 0; border: none; }
-      .chat-sidebar-header { padding: 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
-      .chat-sidebar-list { flex: 1; overflow-y: auto; padding: 8px; min-height: 0; }
-      .chat-session-item { padding: 8px 10px; border-radius: var(--radius); cursor: pointer; font-size: 12px; color: var(--fg-muted); transition: background var(--transition); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .chat-session-item:hover { background: var(--bg-panel-hover); color: var(--fg); }
-      .chat-session-item.active { background: var(--bg-panel); border: 1px solid var(--border); color: var(--fg); }
-      .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; height: 100%; }
-      .chat-header { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg-base); flex-shrink: 0; }
-      .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-      .chat-status-bar { font-size: 10px; color: var(--fg-subtle); display: flex; gap: 12px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--bg-inset); flex-shrink: 0; }
-      .chat-input-area { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: flex-end; background: var(--bg-base); flex-shrink: 0; }
-      #chat-input { flex: 1; resize: none; max-height: 120px; padding: 10px 14px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); color: var(--fg); font-family: var(--font); font-size: 14px; outline: none; }
-      #chat-input:focus { border-color: var(--fg); }
-      #chat-input::placeholder { color: var(--fg-muted); font-size: 14px; }
-      .chat-sidebar-backdrop { display: none; position: fixed; inset: 56px 0 0 0; background: rgba(0,0,0,0.5); z-index: 99; }
-      .chat-sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: transparent; border: 1px solid var(--border); border-radius: var(--radius); color: var(--fg); cursor: pointer; z-index: 101; }
-      .chat-sidebar-toggle:hover { background: var(--bg-input); }
-      .icon-btn { padding: 0; background: transparent; border: none; color: var(--fg); cursor: pointer; border-radius: var(--radius); }
-      #chat-profile { width:100%;margin:0;padding:8px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--fg);font-family:var(--font);font-size:13px;outline:none;cursor:pointer; }
-      #chat-profile:focus { border-color: var(--gold, #ffac02); }
-      #chat-session-search { width:100%;margin:6px 0 0 0;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--fg);font-family:var(--font);font-size:13px;outline:none; }
-      #chat-session-search::placeholder { color: var(--fg-muted); font-size: 13px; }
-      /* Tool call cards */
-      .tool-call-card { margin: 6px 0; border-radius: 8px; background: var(--bg-input, #1a1a2e); border-left: 3px solid var(--gold, #ffac02); padding: 0; font-size: 13px; overflow: hidden; }
-      .tool-card-header { display: flex; align-items: center; gap: 6px; padding: 8px 10px; cursor: pointer; user-select: none; }
-      .tool-card-header:hover { background: rgba(255,255,255,0.03); }
-      .tool-card-icon { font-size: 12px; }
-      .tool-card-name { font-weight: 600; font-size: 12px; color: var(--gold, #ffac02); flex: 1; }
-      .tool-card-status { font-size: 10px; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
-      .tool-card-status.running { background: rgba(255,172,2,0.15); color: var(--gold, #ffac02); }
-      .tool-card-status.done { background: rgba(52,211,153,0.15); color: #34d399; }
-      .tool-card-status.error { background: rgba(255,107,107,0.15); color: #ff6b6b; }
-      .tool-card-chevron { font-size: 10px; color: var(--fg-subtle); transition: transform 0.2s; }
-      .tool-card-body { max-height: 0; overflow: hidden; transition: max-height 0.25s ease; }
-      .tool-call-card.expanded .tool-card-body { max-height: 600px; overflow-y: auto; }
-      .tool-call-card.expanded .tool-card-chevron { transform: rotate(90deg); }
-      .tool-card-args { padding: 6px 10px; border-top: 1px solid var(--border); }
-      .tool-card-args code { font-size: 11px; color: var(--fg-subtle); white-space: pre-wrap; word-break: break-all; display: block; }
-      .tool-card-preview { padding: 4px 10px; font-size: 11px; color: var(--fg-subtle); }
-      .tool-card-result { padding: 6px 10px; border-top: 1px solid var(--border); }
-      .tool-card-result pre { margin: 4px 0; font-size: 11px; white-space: pre-wrap; max-height: 200px; overflow-y: auto; color: var(--fg-muted); }
-      /* Blink animation */
-      @keyframes blink { 0%,50% { opacity:1; } 51%,100% { opacity:0; } }
-      .chat-cursor { animation: blink 1s infinite; }
-      /* Mobile */
-      @media (max-width: 768px) {
-        .chat-sidebar { position: fixed; left: 0; top: 56px; height: calc(100vh - 56px); z-index: 100; width: 85vw; max-width: 360px; box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
-        .chat-sidebar.collapsed { transform: translateX(-100%); }
-        .chat-sidebar-backdrop.active { display: block; }
-        .chat-layout { margin: -12px; height: calc(100vh - 56px - 48px); }
-        .chat-header { position: relative; z-index: 102; }
-        .chat-input-area { padding: 8px 12px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
-        #chat-input { font-size: 16px !important; }
-        #chat-input::placeholder { font-size: 16px !important; }
-        #chat-session-search { font-size: 16px !important; }
-        #chat-session-search::placeholder { font-size: 16px !important; }
-        #chat-profile { font-size: 16px !important; }
-        .chat-session-item { min-height: 48px; padding: 10px 14px; }
-        #chat-stop-btn { font-size: 14px; padding: 6px 14px; }
-      }
-      @media (max-width: 480px) {
-        .chat-sidebar { width: 100vw; min-width: 100vw; max-width: 100vw; }
-      }
-     </style>
     <div class="chat-layout">
       <div id="chat-sidebar" class="chat-sidebar${sidebarCollapsed}">
         <div class="chat-sidebar-header">
@@ -343,8 +276,8 @@ async function loadChat(container) {
       <div class="chat-sidebar-backdrop" id="chat-sidebar-backdrop" onclick="toggleChatSidebar()"></div>
       <div class="chat-main">
         <div class="chat-header" id="chat-header">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <button class="icon-btn chat-sidebar-toggle" id="chat-sidebar-toggle" aria-label="Toggle sidebar" onclick="toggleChatSidebar()">
+          <div class="chat-header-left">
+            <button class="chat-sidebar-toggle" id="chat-sidebar-toggle" aria-label="Toggle sidebar" onclick="toggleChatSidebar()">
               <span>☰</span>
             </button>
             <div>
@@ -352,7 +285,8 @@ async function loadChat(container) {
               <div class="chat-subtitle" id="chat-subtitle"></div>
             </div>
           </div>
-          <div style="display:flex;gap:4px;align-items:center;">
+          <div class="chat-header-right">
+            <span class="chat-header-model-badge" id="chat-model-badge" style="display:none;"></span>
             <button class="btn btn-ghost btn-sm" onclick="renameChatSession()" title="Rename">✏</button>
             <button class="btn btn-ghost btn-sm btn-danger" onclick="deleteChatSession()" title="Delete">🗑</button>
           </div>
@@ -408,10 +342,10 @@ async function loadChat(container) {
 
   // Welcome message
   document.getElementById('chat-messages').innerHTML = `
-    <div style="text-align:center;color:var(--fg-subtle);padding:80px 20px;">
-      <div style="font-size:32px;margin-bottom:16px;">💬</div>
-      <div style="font-size:16px;margin-bottom:8px;color:var(--fg);">Welcome to Chat</div>
-      <div style="font-size:13px;">Select a conversation or start a new one</div>
+    <div class="chat-welcome">
+      <div class="chat-welcome-icon">💬</div>
+      <div class="chat-welcome-title">Welcome to Chat</div>
+      <div class="chat-welcome-sub">Select a conversation or start a new one</div>
     </div>
   `;
 }
@@ -483,6 +417,16 @@ async function loadChatSession(sessionId) {
       tokensEl.textContent = tokens > 0 ? formatNumber(tokens) + ' tokens' : '';
     }
 
+    // Model badge
+    const modelBadge = document.getElementById('chat-model-badge');
+    if (modelBadge && data.session?.model) {
+      const modelName = data.session.model.split('/').pop() || data.session.model;
+      modelBadge.textContent = modelName;
+      modelBadge.style.display = '';
+    } else if (modelBadge) {
+      modelBadge.style.display = 'none';
+    }
+
     if (!data.messages || data.messages.length === 0) {
       container.innerHTML = '<div style="text-align:center;color:var(--fg-subtle);padding:40px;font-size:13px;">No messages yet</div>';
       return;
@@ -500,23 +444,22 @@ async function loadChatSession(sessionId) {
 
 function renderChatMessage(msg) {
   const role = msg.role || 'unknown';
-  const colors = {
-    user: { bg: 'var(--accent-dim)', border: 'var(--accent)', label: 'You', icon: '👤' },
-    assistant: { bg: 'var(--bg-card)', border: 'var(--green, #4ade80)', label: 'Assistant', icon: '🤖' },
-    tool: { bg: 'rgba(251,146,60,0.06)', border: '#fb923c', label: 'Tool Call', icon: '🔧' },
-    system: { bg: 'rgba(156,163,175,0.06)', border: '#9ca3af', label: 'System', icon: '⚙️' },
+  const labels = {
+    user: { label: 'You', icon: '👤', cls: 'msg-user' },
+    assistant: { label: 'Assistant', icon: '🤖', cls: 'msg-assistant' },
+    tool: { label: 'Tool Result', icon: '⚡', cls: 'msg-tool' },
+    system: { label: 'System', icon: '⚙️', cls: 'msg-system' },
   };
-  const c = colors[role] || colors.system;
+  const c = labels[role] || labels.system;
   const ts = msg.timestamp ? new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
   const div = document.createElement('div');
-  div.className = 'chat-msg';
-  div.style.cssText = `margin-bottom:12px;padding:12px 16px;border-radius:10px;background:${c.bg};border-left:3px solid ${c.border};`;
+  div.className = `chat-msg ${c.cls}`;
 
   // Header
   const header = document.createElement('div');
-  header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
-  header.innerHTML = `<span style="font-size:11px;font-weight:600;color:var(--fg-muted);display:flex;align-items:center;gap:4px;">${c.icon} ${c.label}</span>${ts ? `<span style="font-size:10px;color:var(--fg-subtle);">${ts}</span>` : ''}`;
+  header.className = 'msg-header';
+  header.innerHTML = `<span class="msg-header-label">${c.icon} ${c.label}</span>${ts ? `<span class="msg-header-time">${ts}</span>` : ''}`;
   div.appendChild(header);
 
   // Tool calls — render as collapsible cards
@@ -528,16 +471,15 @@ function renderChatMessage(msg) {
       try { args = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments || {}); } catch {}
       
       const toolCard = document.createElement('div');
-      toolCard.className = 'chat-tool-card';
+      toolCard.className = 'tool-call-card';
       toolCard.innerHTML = `
-        <div class="chat-tool-header" onclick="this.parentElement.classList.toggle('expanded')">
-          <span class="chat-tool-icon">🔧</span>
-          <span class="chat-tool-name">${escapeHtml(name)}</span>
-          <span class="chat-tool-args-preview">${escapeHtml(Object.keys(args).slice(0, 3).join(', '))}</span>
-          <span class="chat-tool-chevron">▶</span>
+        <div class="tool-card-header" onclick="this.parentElement.classList.toggle('expanded')">
+          <span class="tool-card-icon">⚡</span>
+          <span class="tool-card-name">${escapeHtml(name)}</span>
+          <span class="tool-card-chevron">▶</span>
         </div>
-        <div class="chat-tool-body">
-          <div class="chat-tool-args"><pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:11px;">${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>
+        <div class="tool-card-body">
+          <div class="tool-card-args"><code>${escapeHtml(JSON.stringify(args, null, 2))}</code></div>
         </div>
       `;
       div.appendChild(toolCard);
@@ -547,7 +489,7 @@ function renderChatMessage(msg) {
   // Tool result content
   if (role === 'tool') {
     const contentDiv = document.createElement('div');
-    contentDiv.style.cssText = 'font-size:12px;line-height:1.6;color:var(--fg);white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;background:var(--bg-panel);padding:8px;border-radius:6px;';
+    contentDiv.className = 'msg-tool-result';
     let content = msg.content;
     try {
       const parsed = JSON.parse(content);
@@ -570,7 +512,7 @@ function renderChatMessage(msg) {
 
   if (content) {
     const contentDiv = document.createElement('div');
-    contentDiv.style.cssText = 'font-size:13px;line-height:1.7;color:var(--fg);white-space:pre-wrap;word-break:break-word;';
+    contentDiv.className = 'msg-body';
     contentDiv.innerHTML = renderChatContent(content.substring(0, 8000));
     div.appendChild(contentDiv);
   }
@@ -579,7 +521,7 @@ function renderChatMessage(msg) {
   if (msg.reasoning) {
     const rd = document.createElement('details');
     rd.style.cssText = 'margin-top:8px;';
-    rd.innerHTML = `<summary style="cursor:pointer;font-size:11px;color:var(--fg-subtle);">💭 Reasoning</summary><div style="font-size:11px;color:var(--fg-muted);line-height:1.5;white-space:pre-wrap;padding:6px;background:var(--bg-panel);border-radius:4px;margin-top:4px;max-height:150px;overflow-y:auto;">${escapeHtml(toDisplayText(msg.reasoning).substring(0, 2000))}</div>`;
+    rd.innerHTML = `<summary style="cursor:pointer;font-size:11px;color:var(--fg-subtle);">💭 Reasoning</summary><div class="msg-tool-result" style="margin-top:4px;">${escapeHtml(toDisplayText(msg.reasoning).substring(0, 2000))}</div>`;
     div.appendChild(rd);
   }
 
@@ -614,10 +556,10 @@ function newChatSession() {
   if (statusTokensEl) statusTokensEl.textContent = '';
   const messagesEl = document.getElementById('chat-messages');
   if (messagesEl) messagesEl.innerHTML = `
-    <div style="text-align:center;color:var(--fg-subtle);padding:80px 20px;">
-      <div style="font-size:32px;margin-bottom:16px;">💬</div>
-      <div style="font-size:16px;margin-bottom:8px;color:var(--fg);">New conversation</div>
-      <div style="font-size:13px;">Type a message to start</div>
+    <div class="chat-welcome">
+      <div class="chat-welcome-icon">💬</div>
+      <div class="chat-welcome-title">New conversation</div>
+      <div class="chat-welcome-sub">Type a message to start</div>
     </div>
   `;
   document.querySelectorAll('.chat-session-item').forEach(el => el.classList.remove('active'));
@@ -728,11 +670,11 @@ async function sendChatMessage() {
   }
   const streamEl = document.createElement('div');
   streamEl.id = 'chat-streaming';
-  streamEl.style.cssText = 'margin-bottom:8px;padding:10px 12px;border-radius:8px;background:var(--bg-card);border-left:3px solid var(--green, #4ade80);';
-  streamEl.innerHTML = '<div style="font-size:10px;color:var(--fg-subtle);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;">assistant</div><div id="chat-stream-content" style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:var(--fg);"><span class="chat-cursor" style="animation:blink 1s infinite;">▊</span></div>';
+  streamEl.className = 'chat-msg msg-assistant';
+  streamEl.innerHTML = '<div class="msg-header"><span class="msg-header-label">🤖 Assistant</span></div><div class="msg-body"><span class="streaming-text" id="gw-stream-text"><span class="chat-cursor">▊</span></span></div>';
   if (messagesDiv) messagesDiv.appendChild(streamEl);
   if (messagesDiv) messagesDiv.scrollTop = messagesDiv.scrollHeight;
-  const contentDiv = streamEl.querySelector('#chat-stream-content');
+  const contentDiv = streamEl.querySelector('#gw-stream-text') || streamEl.querySelector('.msg-body');
   let fullContent = '';
   const startTime = Date.now();
   // Show stop button, hide send
@@ -926,7 +868,7 @@ function addToolCallCard(contentDiv, callId, name, args) {
   const argsPreview = argsStr.substring(0, 150) + (argsStr.length > 150 ? '...' : '');
   card.innerHTML = `
     <div class="tool-card-header" onclick="this.parentElement.classList.toggle('expanded')">
-      <span class="tool-card-icon">🔧</span>
+      <span class="tool-card-icon">⚡</span>
       <span class="tool-card-name">${escapeHtml(name || 'tool')}</span>
       <span class="tool-card-status running">running</span>
       <span class="tool-card-chevron">▶</span>
@@ -1014,15 +956,14 @@ function renderChatContent(text) {
 }
 
 function createMessageDiv(role, content) {
-  const r = { user: { bg: 'var(--accent-dim)', border: 'var(--accent)' }, assistant: { bg: 'var(--bg-card)', border: 'var(--green, #4ade80)' } };
-  const i = r[role] || r.assistant;
-  const a = document.createElement('div');
-  a.style.cssText = 'margin-bottom:8px;padding:10px 12px;border-radius:8px;background:' + i.bg + ';border-left:3px solid ' + i.border + ';';
-  const d = document.createElement('div');
-  d.style.cssText = 'font-size:13px;line-height:1.6;color:var(--fg);';
-  d.textContent = content;
-  a.appendChild(d);
-  return a;
+  const cls = { user: 'msg-user', assistant: 'msg-assistant' }[role] || 'msg-assistant';
+  const div = document.createElement('div');
+  div.className = `chat-msg ${cls}`;
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  body.textContent = content;
+  div.appendChild(body);
+  return div;
 }
 
 // ============================================
