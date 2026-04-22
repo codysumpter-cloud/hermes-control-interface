@@ -2704,6 +2704,7 @@ app.post('/api/hci/update', requireRole('admin'), requireCsrf, (req, res) => {
 
   const HCI_DIR = path.join(__dirname);
   const steps = [
+    { name: 'git reset', cmd: `cd ${HCI_DIR} && git checkout -- . 2>&1 || true` },
     { name: 'git pull', cmd: `cd ${HCI_DIR} && git pull --ff-only 2>&1` },
     { name: 'npm install', cmd: `cd ${HCI_DIR} && npm install 2>&1` },
     { name: 'build', cmd: `cd ${HCI_DIR} && npm run build 2>&1` },
