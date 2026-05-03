@@ -4503,11 +4503,23 @@ async function loadSkills(container) {
   let currentPage = 1;
   let totalPages = 1;
   let profiles = [];
+  let installedSkills = new Set();
 
-  // Load profiles for install picker
+  // Load profiles + installed skills for button state tracking
   try {
     const profRes = await api('/api/profiles');
     if (profRes.ok) profiles = profRes.profiles || [];
+    const activeProfile = profiles.find(p => p.active) || { name: 'default' };
+    try {
+      const instRes = await api(`/api/skills/list/${activeProfile.name}`);
+      if (instRes.ok && instRes.output) {
+        const lines = instRes.output.split('\n');
+        for (const line of lines) {
+          const match = line.match(/[│┃]\s*([^\s│┃][^\s│┃]*)\s*[│┃]/);
+          if (match) installedSkills.add(match[1].trim());
+        }
+      }
+    } catch {}
   } catch {}
 
   async function loadPage(page) {
@@ -4561,7 +4573,9 @@ async function loadSkills(container) {
               </div>
               <div style="margin-top:10px;display:flex;gap:6px;">
                 <button class="btn btn-ghost btn-sm" onclick="window.inspectSkill('${escapeHtml(s.name)}')">👁️ Preview</button>
-                <button class="btn btn-primary btn-sm" onclick="window.installSkill('${escapeHtml(s.name)}')">⬇️ Install</button>
+                ${installedSkills.has(s.name)
+                  ? `<button class="btn btn-ok btn-sm" disabled style="cursor:default;">✅ Installed</button>`
+                  : `<button class="btn btn-primary btn-sm" onclick="window.installSkill('${escapeHtml(s.name)}')">⬇️ Install</button>`}
               </div>
             </div>
           `;
@@ -4612,7 +4626,9 @@ async function loadSkills(container) {
                 </div>
                 <div style="margin-top:8px;display:flex;gap:6px;">
                   <button class="btn btn-ghost btn-sm" onclick="window.inspectSkill('${escapeHtml(s.identifier || s.name)}')">🔍 Preview</button>
-                  <button class="btn btn-primary btn-sm" onclick="window.installSkill('${escapeHtml(s.identifier || s.name)}')">⬇ Install</button>
+                  ${installedSkills.has(s.identifier || s.name)
+                    ? `<button class="btn btn-ok btn-sm" disabled style="cursor:default;">✅ Installed</button>`
+                    : `<button class="btn btn-primary btn-sm" onclick="window.installSkill('${escapeHtml(s.identifier || s.name)}')">⬇ Install</button>`}
                 </div>
               </div>
             `).join('') + '</div>';
@@ -4706,7 +4722,12 @@ window.doInstallSkill = async function(skillName) {
     const res = await api('/api/skills/install', { method: 'POST', body: JSON.stringify({ skill: skillName, profile }) });
     if (res.ok) {
       if (statusEl) statusEl.innerHTML = `<div style="color:var(--ok);margin-top:8px;">✅ Installed to ${escapeHtml(profile || 'default')}!</div>`;
-      setTimeout(() => overlay?.remove(), 2000);
+      setTimeout(() => {
+        overlay?.remove();
+        // Refresh skills page to update button states
+        const skillsTab = document.querySelector('.tab[data-tab="skills"]');
+        if (skillsTab) skillsTab.click();
+      }, 1500);
     } else {
       if (statusEl) statusEl.innerHTML = `<div style="color:var(--err);margin-top:8px;">❌ ${escapeHtml(res.output || res.error || 'Install failed')}</div>`;
     }

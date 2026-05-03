@@ -94,9 +94,10 @@ function shell(cmd, timeout = '8s') {
 }
 
 // Safer execution — no bash interpretation, direct args
-function execHermes(args, timeout = 30000) {
+// Optional stdin: pipe data to the process (e.g. 'y' for confirmation prompts)
+function execHermes(args, timeout = 30000, stdin = null) {
   return new Promise((resolve) => {
-    execFile('hermes', args, {
+    const proc = execFile('hermes', args, {
       encoding: 'utf8',
       maxBuffer: 64 * 1024,
       timeout,
@@ -105,6 +106,10 @@ function execHermes(args, timeout = 30000) {
       const output = err ? (stdout + '\n' + stderr) : stdout;
       resolve(output);
     });
+    if (stdin && proc.stdin) {
+      proc.stdin.write(stdin);
+      proc.stdin.end();
+    }
   });
 }
 
@@ -3643,7 +3648,7 @@ app.post('/api/skills/uninstall', requireRole('admin'), requireCsrf, async (req,
     // Sanitize skill name — only allow safe characters to prevent command injection
     if (!/^[\w.\-]+$/.test(skill)) return res.status(400).json({ ok: false, error: 'invalid skill name' });
     const profArg = profile ? ['-p', sanitizeProfileName(profile)] : [];
-    const output = await shell(`echo y | hermes ${profArg.length ? `-p ${profArg[1]} ` : ''}skills uninstall ${skill} 2>&1`, 15000);
+    const output = await execHermes([...profArg, 'skills', 'uninstall', skill], 15000, 'y\n');
     res.json({ ok: true, output });
   } catch (e) {
     res.json({ ok: false, error: e.message });
