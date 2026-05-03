@@ -259,10 +259,6 @@ async function loadPage(page, params = {}) {
       case 'agents':
         await loadAgents(container);
         break;
-      case 'mon':
-        // MON page merged into Home — redirect
-        navigate('home');
-        break;
       case 'agent-detail':
         await loadAgentDetail(container, params);
         break;
