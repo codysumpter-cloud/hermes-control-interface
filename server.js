@@ -2248,6 +2248,15 @@ async function getProfiles() {
   console.log('[DEBUG getProfiles] raw shell output:', JSON.stringify(raw));
   if (raw) {
     const data = parseHermesProfileList(raw);
+    // Fix: hermes profile list doesn't update ◆ marker after `profile use`
+    // Read actual active profile from ~/.hermes/active_profile
+    try {
+      const activeProfilePath = path.join(os.homedir(), '.hermes', 'active_profile');
+      const actualActive = fs.existsSync(activeProfilePath)
+        ? fs.readFileSync(activeProfilePath, 'utf8').trim()
+        : 'default';
+      data.forEach(p => { p.active = p.name === actualActive; });
+    } catch {}
     console.log('[DEBUG getProfiles] parsed:', JSON.stringify(data));
     getProfiles.cache = { at: now, data };
     return data;
