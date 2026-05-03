@@ -2057,12 +2057,17 @@ app.get('/api/monitoring', requireAuth, async (req, res) => {
 
     // CPU percentage (already in format like "12.5%")
     const cpuPct = (cpu.trim() || 'N/A').replace(/,/g, '');
+    const cpuPctNum = parseFloat(cpuPct) || 0;
 
     // Memory usage
     const memInfo = mem.trim() || 'N/A';
+    const memPctMatch = memInfo.match(/\(([\d.]+)%\)/);
+    const memPctNum = memPctMatch ? parseFloat(memPctMatch[1]) : 0;
 
     // Disk usage
     const diskInfo = disk.trim() || 'N/A';
+    const diskPctMatch = diskInfo.match(/\((\d+)%\)/);
+    const diskPctNum = diskPctMatch ? parseFloat(diskPctMatch[1]) : 0;
 
     // Load averages
     const loadParts = (loadAvg.trim() || '0, 0, 0').split(',').map(l => l.trim());
@@ -2091,6 +2096,9 @@ app.get('/api/monitoring', requireAuth, async (req, res) => {
       cpu: cpuPct,
       memory: memInfo,
       disk: diskInfo,
+      cpu_pct: cpuPctNum,
+      mem_pct: memPctNum,
+      disk_pct: diskPctNum,
       load: { avg1: load1, avg5: load5, avg15: load15 },
       network: { interface: netInterface, bytes: netBytes, packets: netPackets },
       processes: procCount,
