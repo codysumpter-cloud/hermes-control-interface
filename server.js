@@ -2273,13 +2273,21 @@ function parseHermesProfileList(raw) {
   for (const line of dataLines) {
     const active = line.includes('◆');
     const cleaned = line.replace(/[◆]+$/, '').replace(/\s*◆\s*/, '').trimEnd();
-    const parts = cleaned.split(/\s{2,}/).map((p) => p.trim()).filter(Boolean);
+    const parts = cleaned.split(/\s+/).map((p) => p.trim()).filter(Boolean);
     if (parts.length < 3) continue;
+    const gatewayIndex = parts.findIndex((p) => /^(running|stopped)$/i.test(p));
+    if (gatewayIndex < 2) continue;
+    const name = parts.slice(0, gatewayIndex - 1).join(' ');
+    const model = parts[gatewayIndex - 1];
+    const gateway = parts[gatewayIndex].toLowerCase();
+    const alias = parts[gatewayIndex + 1] && parts[gatewayIndex + 1] !== '—'
+      ? parts.slice(gatewayIndex + 1).join(' ')
+      : null;
     profiles.push({
-      name: parts[0] || '',
-      model: parts[1] || '—',
-      gateway: (parts[2] || '').toLowerCase(),
-      alias: parts[3] && parts[3] !== '—' ? parts[3] : null,
+      name: name || '',
+      model: model || '—',
+      gateway,
+      alias,
       active,
     });
   }
