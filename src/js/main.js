@@ -2295,7 +2295,7 @@ async function loadHome(container) {
       </div>
     </div>
     <div class="card-grid" id="home-cards" style="grid-template-columns:repeat(3,1fr);">
-      <div class="card"><div class="card-title">Agent Overview</div><div class="loading">Loading</div></div>
+      <div class="card" id="home-agent"><div class="card-title">Agent Overview</div><div class="loading">Loading</div></div>
       <div class="card" id="home-gateways"><div class="card-title">Gateways</div><div class="loading">Loading</div></div>
       <div class="card"><div class="card-title">Hermes Auth</div><div id="home-auth-list"><div class="loading">Loading auth...</div></div></div>
     </div>
@@ -2309,9 +2309,9 @@ async function loadHome(container) {
     ]);
 
     // Row 1: Agent Overview only (System Health/Details moved to Monitor page)
-    const cardsEl = document.getElementById('home-cards');
-    cardsEl.innerHTML = `
-      <div class="card">
+    const agentCard = document.getElementById('home-agent');
+    if (agentCard) {
+      agentCard.innerHTML = `
         <div class="card-title">Agent Overview</div>
         <div class="stat-row"><span class="stat-label">Model</span><span class="stat-value">${agentRes.ok ? (agentRes.model || 'N/A') : 'N/A'}</span></div>
         <div class="stat-row"><span class="stat-label">Provider</span><span class="stat-value">${agentRes.ok ? (agentRes.provider || 'N/A') : 'N/A'}</span></div>
@@ -2320,8 +2320,8 @@ async function loadHome(container) {
         <div class="stat-row"><span class="stat-label">Platforms</span><span class="stat-value">${agentRes.ok ? (agentRes.platforms?.filter(p => p.configured).map(p => p.name).join(', ') || 'None') : 'N/A'}</span></div>
         <div class="stat-row"><span class="stat-label">Cron</span><span class="stat-value">${cronRes?.jobs?.length || 0} jobs</span></div>
         <div class="stat-row"><span class="stat-label">Sessions</span><span class="stat-value">${agentRes.ok ? `${agentRes.activeSessions || 0} active` : 'N/A'}</span></div>
-      </div>
-    `;
+      `;
+    }
 
     // Row 2: Gateways (update only this card, don't replace entire grid)
     const profiles = profilesRes.ok && profilesRes.profiles ? profilesRes.profiles : [];
@@ -2339,7 +2339,8 @@ async function loadHome(container) {
     loadHomeAuth();
 
   } catch (e) {
-    document.getElementById('home-cards').innerHTML = `<div class="card"><div class="card-title">Error</div><div class="error-msg">${escapeHtml(e.message)}</div></div>`;
+    const agentCard = document.getElementById('home-agent');
+    if (agentCard) agentCard.innerHTML = `<div class="card-title">Error</div><div class="error-msg">${escapeHtml(e.message)}</div>`;
   }
 }
 
