@@ -4458,10 +4458,20 @@ function renderUsageCharts(d, daily) {
       projectionData.push(null);
     }
 
-    // Calculate average daily cost and cumulative projection
+    // Calculate weighted average daily cost (recent days weighted more)
+    // Exponential decay: most recent day gets weight 1.0, each older day × 0.85
     const totalCost = costData.reduce((s, v) => s + v, 0);
-    const avgDailyCost = costData.length > 0 ? totalCost / costData.length : 0;
+    let weightedSum = 0, weightTotal = 0;
+    for (let i = 0; i < costData.length; i++) {
+      const w = Math.pow(0.85, costData.length - 1 - i); // recent = higher weight
+      weightedSum += costData[i] * w;
+      weightTotal += w;
+    }
+    const avgDailyCost = weightTotal > 0 ? weightedSum / weightTotal : 0;
     const monthlyPace = avgDailyCost * 30;
+    const simpleAvg = costData.length > 0 ? totalCost / costData.length : 0;
+    // Use weighted if we have 3+ days, otherwise simple average
+    const projAvg = costData.length >= 3 ? avgDailyCost : simpleAvg;
 
     // Build cumulative cost array for projection (starts from last cumulative cost)
     const cumulativeActual = [];
@@ -4471,7 +4481,7 @@ function renderUsageCharts(d, daily) {
     const lastCumCost = cumulativeActual.length > 0 ? cumulativeActual[cumulativeActual.length - 1] : 0;
     const projStart = baseLabels.length;
     for (let i = 0; i < projectionData.length - projStart; i++) {
-      projectionData[projStart + i] = lastCumCost + avgDailyCost * (i + 1);
+      projectionData[projStart + i] = lastCumCost + projAvg * (i + 1);
     }
     // Pad actual cumulative with nulls for the projection range
     const actualPadded = [...cumulativeActual, ...new Array(extendedLabels.length - cumulativeActual.length).fill(null)];
@@ -7073,6 +7083,7 @@ window.hasPerm = hasPerm;
 window.refreshLogs = refreshLogs;
 window.toggleLogsAuto = toggleLogsAuto;
 window.setLogsLevel = setLogsLevel;
+window.setLogsType = setLogsType;
 window.setLogsComponent = setLogsComponent;
 window.setLogsMode = setLogsMode;
 window.debounceLogsSearch = debounceLogsSearch;
