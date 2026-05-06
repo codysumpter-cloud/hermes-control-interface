@@ -4732,6 +4732,69 @@ const server = (() => {
   return server;
 })();
 
+// ── Setup Health Check ──
+// Validates HCI configuration: hermes CLI, gateway API, TUI bridge, config
+app.get('/api/setup/check', requireAuth, async (req, res) => {
+  const results = [];
+
+  // 1. Check hermes CLI available
+  try {
+    const out = await shell('which hermes 2>/dev/null || echo NOT_FOUND');
+    results.push({
+      check: 'hermes_cli',
+      label: 'Hermes CLI',
+      ok: out !== 'NOT_FOUND',
+      detail: out !== 'NOT_FOUND' ? out : 'hermes not on PATH',
+    });
+  } catch {
+    results.push({ check: 'hermes_cli', label: 'Hermes CLI', ok: false, detail: 'not found' });
+  }
+
+  // 2. Check gateway API reachable
+  const ports = gatewayPorts; // already discovered at startup
+  if (Object.keys(ports).length > 0) {
+    const defaultPort = ports['default'] || Object.values(ports)[0];
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 3000);
+      const healthRes = await fetch(`http://127.0.0.1:${defaultPort}/health`, { signal: ctrl.signal });
+      clearTimeout(t);
+      results.push({
+        check: 'gateway_api',
+        label: 'Gateway API',
+        ok: healthRes.ok,
+        detail: healthRes.ok ? `port ${defaultPort} — healthy` : `port ${defaultPort} — ${healthRes.status}`,
+      });
+    } catch {
+      results.push({ check: 'gateway_api', label: 'Gateway API', ok: false, detail: `port ${defaultPort} — unreachable` });
+    }
+  } else {
+    results.push({ check: 'gateway_api', label: 'Gateway API', ok: false, detail: 'no gateway ports discovered' });
+  }
+
+  // 3. Check Python bridge (TUI gateway)
+  const pythonRoot = process.env.HERMES_PYTHON_SRC_ROOT || path.join(os.homedir(), '.hermes', 'hermes-agent');
+  const tuiEntry = path.join(pythonRoot, 'tui_gateway', 'entry.py');
+  results.push({
+    check: 'tui_bridge',
+    label: 'TUI Python Bridge',
+    ok: fs.existsSync(tuiEntry),
+    detail: fs.existsSync(tuiEntry) ? `found at ${tuiEntry}` : `missing — expected at ${tuiEntry}`,
+  });
+
+  // 4. Check hermes config.yaml
+  const configPath = path.join(os.homedir(), '.hermes', 'config.yaml');
+  try {
+    const raw = fs.readFileSync(configPath, 'utf8');
+    yaml.load(raw);
+    results.push({ check: 'hermes_config', label: 'Hermes Config', ok: true, detail: configPath });
+  } catch {
+    results.push({ check: 'hermes_config', label: 'Hermes Config', ok: false, detail: 'missing or invalid config.yaml' });
+  }
+
+  res.json({ ok: true, checks: results });
+});
+
 // ── WebSocket Chat Gateway Bridge ──
 // Proxies Gateway API /v1/responses via WebSocket for real-time event streaming.
 async function handleWsChatStart(socket, msg) {

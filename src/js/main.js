@@ -131,6 +131,17 @@ function showApp() {
   wsClient.addEventListener('close', () => {
     state._wsConnected = false;
     updateWsConnectionUI(false);
+    // Unlock chat if disconnect happens mid-stream
+    if (state._chatLock) {
+      state._chatLock = false;
+      const sendBtn = document.getElementById('chat-send-btn');
+      const stopBtn = document.getElementById('chat-stop-btn');
+      if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send'; sendBtn.style.display = ''; }
+      if (stopBtn) stopBtn.style.display = 'none';
+      const cursors = document.querySelectorAll('.chat-cursor');
+      cursors.forEach(c => c.remove());
+      showChatWarning('Connection lost — response may be incomplete');
+    }
   });
   if (wsClient.connected) {
     // Already connected (e.g. reconnect before showApp re-runs)
@@ -446,6 +457,12 @@ async function loadChat(container) {
   const profileSelect = document.getElementById('chat-profile');
   if (profileSelect) profileSelect.value = defaultProfile;
 
+  // Restore last-used profile from localStorage
+  const lastProfile = localStorage.getItem('hci-chat-profile');
+  if (lastProfile && profiles.some(p => p.name === lastProfile)) {
+    profileSelect.value = lastProfile;
+  }
+
   // Cache profiles for the info panel
   _chatInfoProfiles = profiles;
 
@@ -458,6 +475,8 @@ async function loadChat(container) {
   // prompt the user to set it as their default agent.
   profileSelect?.addEventListener('change', async () => {
     const selected = profileSelect.value;
+    // Persist selection for page navigation
+    localStorage.setItem('hci-chat-profile', selected);
     const hermesDefault = state._defaultProfile || 'default';
     // Only prompt if: (1) not already the Hermes default, (2) no active session (new chat)
     if (selected !== hermesDefault && !state._currentChatSession) {
@@ -494,11 +513,9 @@ async function loadChat(container) {
           profileSelect.value = hermesDefault;
         }
       } else {
-        // User cancelled or overlay-clicked — revert to Hermes default (do NOT apply selected for new chats)
-        profileSelect.value = hermesDefault;
-        refreshChatSidebar();
+        // User cancelled — apply selection for this session only (don't persist as default)
+        updateChatAgentPanel().catch(() => {});
         updateGatewayBadge().catch(() => {});
-        return;
       }
     }
     refreshChatSidebar();
@@ -990,7 +1007,7 @@ async function updateChatAgentPanel() {
   // All agents compact list
   const agentItems = profiles.map(p => {
     const isRunning = p.gateway === 'running';
-    return `<div class="agent-list-item">
+    return `<div class="agent-list-item" onclick="switchChatProfile('${escapeHtml(p.name)}')" style="cursor:pointer;" title="Switch to ${escapeHtml(p.name)}">
       <span class="agent-list-dot ${isRunning ? 'running' : 'stopped'}"></span>
       <span class="agent-list-name">${escapeHtml(p.name)}</span>
       <span class="agent-list-model">${escapeHtml((p.model || '—').split('/').pop())}</span>
@@ -999,6 +1016,14 @@ async function updateChatAgentPanel() {
   }).join('');
 
   body.innerHTML = currentCard + `<div class="agent-list">${agentItems}</div>`;
+}
+
+function switchChatProfile(name) {
+  const sel = document.getElementById('chat-profile');
+  if (sel) {
+    sel.value = name;
+    sel.dispatchEvent(new Event('change'));
+  }
 }
 
 // Stop active chat stream (Gateway API or CLI or WS)
@@ -1351,10 +1376,13 @@ function setupWsChatHandlers() {
         console.log('[TUI] Gateway ready');
         break;
       case 'tui.stderr':
-        console.log('[TUI] stderr:', msg.line);
+        // Surface actionable TUI messages; filter routine noise
+        if (msg.line && !/(?:INFO|DEBUG|^\s*$)/.test(msg.line)) {
+          showChatWarning(msg.line);
+        }
         break;
       case 'tui.error':
-        console.error('[TUI] error:', msg.error);
+        showChatError('TUI gateway error: ' + (msg.error || 'unknown'));
         break;
     }
   });
@@ -1731,13 +1759,21 @@ function finalizeWsChat() {
 function showChatError(error) {
   const messagesDiv = document.getElementById('chat-messages');
   if (messagesDiv) {
-    messagesDiv.innerHTML += `<div class="chat-msg msg-system"><div class="msg-body" style="color:var(--error)">❌ ${escapeHtml(error)}</div></div>`;
+    messagesDiv.innerHTML += `<div class="chat-msg msg-system"><div class="msg-body" style="color:var(--red)">❌ ${escapeHtml(error)}</div></div>`;
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
   }
   const stopBtn = document.getElementById('chat-stop-btn');
   if (stopBtn) stopBtn.style.display = 'none';
   const sendBtn = document.getElementById('chat-send-btn');
   if (sendBtn) sendBtn.style.display = '';
+}
+
+function showChatWarning(msg) {
+  const messagesDiv = document.getElementById('chat-messages');
+  if (messagesDiv) {
+    messagesDiv.innerHTML += `<div class="chat-msg msg-system"><div class="msg-body" style="color:var(--amber)">⚠️ ${escapeHtml(msg)}</div></div>`;
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
 }
 
 // ── Send via WebSocket ──
@@ -2294,10 +2330,11 @@ async function loadHome(container) {
         <button class="btn btn-ghost" onclick="loadHome(document.querySelector('.page.active'))">↻ Refresh</button>
       </div>
     </div>
-    <div class="card-grid" id="home-cards" style="grid-template-columns:repeat(3,1fr);">
+    <div class="card-grid" id="home-cards" style="grid-template-columns:repeat(4,1fr);">
       <div class="card" id="home-agent"><div class="card-title">Agent Overview</div><div class="loading">Loading</div></div>
       <div class="card" id="home-gateways"><div class="card-title">Gateways</div><div class="loading">Loading</div></div>
       <div class="card"><div class="card-title">Hermes Auth</div><div id="home-auth-list"><div class="loading">Loading auth...</div></div></div>
+      <div class="card" id="home-setup"><div class="card-title">Setup Health</div><div class="loading">Checking...</div></div>
     </div>
   `;
 
@@ -2337,6 +2374,29 @@ async function loadHome(container) {
 
     // Load auth into home
     loadHomeAuth();
+
+    // Load setup health
+    try {
+      const checkRes = await fetch('/api/setup/check');
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        const allOk = checkData.checks.every(c => c.ok);
+        const items = checkData.checks.map(c =>
+          `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;">
+            <span style="color:${c.ok ? 'var(--green)' : 'var(--red)'};">${c.ok ? '✅' : '❌'}</span>
+            <span>${escapeHtml(c.label)}</span>
+            <span style="color:var(--fg-muted);font-size:11px;margin-left:auto;">${escapeHtml(c.detail || '')}</span>
+          </div>`
+        ).join('');
+        const setupCard = document.getElementById('home-setup');
+        if (setupCard) {
+          setupCard.innerHTML = `<div class="card-title">Setup Health</div>${items}`;
+        }
+      }
+    } catch (e) {
+      const setupCard = document.getElementById('home-setup');
+      if (setupCard) setupCard.innerHTML = `<div class="card-title">Setup Health</div><div class="error-msg">${escapeHtml(e.message)}</div>`;
+    }
 
   } catch (e) {
     const agentCard = document.getElementById('home-agent');
