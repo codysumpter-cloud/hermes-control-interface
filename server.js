@@ -774,6 +774,7 @@ const quickActions = [
   { cmd: 'hermes config', desc: 'Show Hermes config' },
 ];
 const layoutStorePath = path.join(CONTROL_HOME, 'control-interface-layout.json');
+const officeDepartmentsPath = path.join(CONTROL_HOME, 'office-departments.json');
 
 const spriteState = {
   state: 'idle',
@@ -1216,6 +1217,27 @@ function writeLayoutStore(layout) {
   };
   fs.mkdirSync(path.dirname(layoutStorePath), { recursive: true });
   fs.writeFileSync(layoutStorePath, JSON.stringify(payload, null, 2));
+  return payload;
+}
+
+function readOfficeDepartments() {
+  try {
+    const raw = fs.readFileSync(officeDepartmentsPath, 'utf8');
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data?.departments)) return { departments: [] };
+    return data;
+  } catch {
+    return { departments: [] };
+  }
+}
+
+function writeOfficeDepartments(data) {
+  const payload = {
+    updatedAt: new Date().toISOString(),
+    departments: Array.isArray(data?.departments) ? data.departments : [],
+  };
+  fs.mkdirSync(path.dirname(officeDepartmentsPath), { recursive: true });
+  fs.writeFileSync(officeDepartmentsPath, JSON.stringify(payload, null, 2));
   return payload;
 }
 
@@ -2963,6 +2985,54 @@ app.post('/api/layout', requireCsrf, (req, res) => {
   } catch (error) {
     return res.status(400).json({ error: error.message || 'layout save failed' });
   }
+});
+
+// ── Office / Departments API ──────────────────────────────────────────────
+
+app.get('/api/office/departments', requireAuth, (req, res) => {
+  res.json({ ok: true, ...readOfficeDepartments() });
+});
+
+app.post('/api/office/departments', requireRole('admin'), requireCsrf, (req, res) => {
+  const name = String(req.body?.name || '').trim().slice(0, 40);
+  const color = String(req.body?.color || '#7c945c').trim();
+  if (!name) return res.status(400).json({ ok: false, error: 'name required' });
+  if (!/^#[0-9a-fA-F]{6}$/.test(color))
+    return res.status(400).json({ ok: false, error: 'color must be #rrggbb' });
+  const data = readOfficeDepartments();
+  const id = crypto.randomBytes(6).toString('hex');
+  data.departments.push({ id, name, color, members: [] });
+  writeOfficeDepartments(data);
+  log('office.dept.create', name);
+  res.json({ ok: true, id });
+});
+
+app.delete('/api/office/departments/:id', requireRole('admin'), requireCsrf, (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!/^[a-f0-9]{12}$/.test(id)) return res.status(400).json({ ok: false, error: 'invalid id' });
+  const data = readOfficeDepartments();
+  const before = data.departments.length;
+  data.departments = data.departments.filter(d => d.id !== id);
+  if (data.departments.length === before) return res.status(404).json({ ok: false, error: 'not found' });
+  writeOfficeDepartments(data);
+  log('office.dept.delete', id);
+  res.json({ ok: true });
+});
+
+app.put('/api/office/departments/:id/members', requireRole('admin'), requireCsrf, (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!/^[a-f0-9]{12}$/.test(id)) return res.status(400).json({ ok: false, error: 'invalid id' });
+  const rawMembers = Array.isArray(req.body?.members) ? req.body.members : [];
+  const members = rawMembers
+    .map(m => sanitizeProfileName(String(m)))
+    .filter(Boolean);
+  const data = readOfficeDepartments();
+  const dept = data.departments.find(d => d.id === id);
+  if (!dept) return res.status(404).json({ ok: false, error: 'department not found' });
+  dept.members = members;
+  writeOfficeDepartments(data);
+  log('office.dept.members', `${id}: ${members.join(', ')}`);
+  res.json({ ok: true });
 });
 
 app.get('/api/avatar', requireAuth, (req, res) => {
