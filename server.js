@@ -1028,6 +1028,8 @@ function appendTerminalOutput(chunk) {
 
 function ensureTerminalSession() {
   if (terminalSession.proc && terminalSession.ready) return terminalSession;
+  // If terminal previously failed, don't retry — return degraded session
+  if (terminalSession._spawnFailed) return terminalSession;
 
   const REAL_HOME = os.homedir();
   const env = {
@@ -1044,13 +1046,22 @@ function ensureTerminalSession() {
     PATH: process.env.PATH,
   };
 
-  const proc = pty.spawn('bash', ['--noprofile', '--norc', '-i'], {
-    cwd: PROJECT_ROOT,
-    env,
-    cols: terminalSession.cols,
-    rows: terminalSession.rows,
-    name: 'xterm-256color',
-  });
+  let proc;
+  try {
+    proc = pty.spawn('bash', ['--noprofile', '--norc', '-i'], {
+      cwd: PROJECT_ROOT,
+      env,
+      cols: terminalSession.cols,
+      rows: terminalSession.rows,
+      name: 'xterm-256color',
+    });
+  } catch (e) {
+    console.error('[HCI] PTY spawn failed — terminal disabled:', e.message);
+    terminalSession._spawnFailed = true;
+    terminalSession.lastError = 'PTY unavailable: ' + e.message;
+    terminalSession.buffer = '';
+    return terminalSession;
+  }
 
   terminalSession.proc = proc;
   terminalSession.startedAt = Date.now();
