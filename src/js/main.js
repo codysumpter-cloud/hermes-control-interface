@@ -131,7 +131,7 @@ function showApp() {
   wsClient.addEventListener('close', () => {
     state._wsConnected = false;
     updateWsConnectionUI(false);
-    // Unlock chat if disconnect happens mid-stream
+    // Unlock chat if disconnect happens mid-stream (debounced: once per 15s)
     if (state._chatLock) {
       state._chatLock = false;
       const sendBtn = document.getElementById('chat-send-btn');
@@ -140,7 +140,11 @@ function showApp() {
       if (stopBtn) stopBtn.style.display = 'none';
       const cursors = document.querySelectorAll('.chat-cursor');
       cursors.forEach(c => c.remove());
-      showChatWarning('Connection lost — response may be incomplete');
+      const now = Date.now();
+      if (!state._lastWsWarn || now - state._lastWsWarn > 15000) {
+        state._lastWsWarn = now;
+        showChatWarning('Connection lost — response may be incomplete');
+      }
     }
   });
   if (wsClient.connected) {

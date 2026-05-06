@@ -4750,26 +4750,52 @@ app.get('/api/setup/check', requireAuth, async (req, res) => {
     results.push({ check: 'hermes_cli', label: 'Hermes CLI', ok: false, detail: 'not found' });
   }
 
-  // 2. Check gateway API reachable
-  const ports = gatewayPorts; // already discovered at startup
-  if (Object.keys(ports).length > 0) {
-    const defaultPort = ports['default'] || Object.values(ports)[0];
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 3000);
-      const healthRes = await fetch(`http://127.0.0.1:${defaultPort}/health`, { signal: ctrl.signal });
-      clearTimeout(t);
-      results.push({
-        check: 'gateway_api',
-        label: 'Gateway API',
-        ok: healthRes.ok,
-        detail: healthRes.ok ? `port ${defaultPort} — healthy` : `port ${defaultPort} — ${healthRes.status}`,
-      });
-    } catch {
-      results.push({ check: 'gateway_api', label: 'Gateway API', ok: false, detail: `port ${defaultPort} — unreachable` });
+  // 2. Check gateway API reachable (only for running profiles)
+  const ports = gatewayPorts;
+  // Cross-reference with `hermes profile list` to find running gateways
+  let runningPorts = {};
+  try {
+    const profileOut = await shell('hermes profile list 2>/dev/null');
+    // Parse lines like: "◆default  model  running  —"
+    const runningProfiles = profileOut.split('\n')
+      .filter(l => l.includes('running') && !l.includes('Gateway'))
+      .map(l => l.trim().split(/\s+/)[0].replace('◆', ''));
+    for (const [name, port] of Object.entries(ports)) {
+      if (runningProfiles.includes(name)) runningPorts[name] = port;
     }
+  } catch {
+    runningPorts = ports; // fallback: try all discovered ports
+  }
+  if (Object.keys(runningPorts).length > 0) {
+    const entries = Object.entries(runningPorts);
+    // Check all running gateway APIs
+    const portResults = await Promise.all(entries.map(async ([name, port]) => {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 3000);
+        const healthRes = await fetch(`http://127.0.0.1:${port}/health`, { signal: ctrl.signal });
+        clearTimeout(t);
+        return `${name}:${port} — ${healthRes.ok ? 'healthy' : healthRes.status}`;
+      } catch {
+        return `${name}:${port} — unreachable`;
+      }
+    }));
+    const allHealthy = portResults.every(r => r.includes('healthy'));
+    results.push({
+      check: 'gateway_api',
+      label: 'Gateway API',
+      ok: allHealthy,
+      detail: portResults.join(', '),
+    });
   } else {
-    results.push({ check: 'gateway_api', label: 'Gateway API', ok: false, detail: 'no gateway ports discovered' });
+    results.push({
+      check: 'gateway_api',
+      label: 'Gateway API',
+      ok: false,
+      detail: Object.keys(ports).length > 0
+        ? `ports discovered (${Object.values(ports).join(', ')}) but no running gateways`
+        : 'no gateway ports configured — chat uses CLI fallback',
+    });
   }
 
   // 3. Check Python bridge (TUI gateway)
