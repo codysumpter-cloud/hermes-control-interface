@@ -1364,7 +1364,9 @@ function setupWsChatHandlers() {
         finalizeWsChat();
         break;
       case 'chat.error':
-        showChatError(msg.error);
+        // Bridge errors are recoverable — CLI fallback handles it.
+        // Show as warning, not fatal error.
+        showChatWarning(msg.error);
         break;
       case 'chat.clarify':
         showClarifyModal(msg.question, msg.choices, msg.request_id);
@@ -1824,7 +1826,8 @@ async function sendViaWebSocket(text, profile, sessionId) {
         resolve();
       } else if (msg.type === 'chat.error') {
         wsClient.removeEventListener('message', onDone);
-        showChatError(msg.error);
+        // Recoverable — CLI fallback will handle this
+        showChatWarning(msg.error);
         reject(new Error(msg.error));
       }
     }
