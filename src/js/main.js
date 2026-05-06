@@ -1161,10 +1161,17 @@ async function sendChatMessage() {
         await sendViaWebSocket(text, profile, sessionId);
         return; // WS success — done
       } catch (wsErr) {
-        console.warn('[Chat] WS failed, falling back to CLI:', wsErr.message);
+        console.warn('[Chat] WS failed, trying Gateway API:', wsErr.message);
       }
     }
-    // Fallback to CLI (Gateway API chat endpoint not available in Hermes)
+    // Try Gateway API directly (fast, structured SSE events)
+    try {
+      await sendViaGatewayAPI(text, profile, sessionId, contentDiv, messagesDiv, startTime);
+      return;
+    } catch (gwErr) {
+      console.warn('[Chat] Gateway API failed, falling back to CLI:', gwErr.message);
+    }
+    // Last resort: raw CLI (slow, stdout parsing)
     await sendViaCLI(text, profile, sessionId, contentDiv, messagesDiv, startTime);
   } catch (cliErr) {
     console.error('[Chat] CLI failed:', cliErr.message);
