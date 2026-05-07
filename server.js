@@ -1028,6 +1028,8 @@ function appendTerminalOutput(chunk) {
 
 function ensureTerminalSession() {
   if (terminalSession.proc && terminalSession.ready) return terminalSession;
+  // If terminal previously failed, don't retry — return degraded session
+  if (terminalSession._spawnFailed) return terminalSession;
 
   const REAL_HOME = os.homedir();
   const env = {
@@ -1044,13 +1046,22 @@ function ensureTerminalSession() {
     PATH: process.env.PATH,
   };
 
-  const proc = pty.spawn('bash', ['--noprofile', '--norc', '-i'], {
-    cwd: PROJECT_ROOT,
-    env,
-    cols: terminalSession.cols,
-    rows: terminalSession.rows,
-    name: 'xterm-256color',
-  });
+  let proc;
+  try {
+    proc = pty.spawn('bash', ['--noprofile', '--norc', '-i'], {
+      cwd: PROJECT_ROOT,
+      env,
+      cols: terminalSession.cols,
+      rows: terminalSession.rows,
+      name: 'xterm-256color',
+    });
+  } catch (e) {
+    console.error('[HCI] PTY spawn failed — terminal disabled:', e.message);
+    terminalSession._spawnFailed = true;
+    terminalSession.lastError = 'PTY unavailable: ' + e.message;
+    terminalSession.buffer = '';
+    return terminalSession;
+  }
 
   terminalSession.proc = proc;
   terminalSession.startedAt = Date.now();
@@ -4731,6 +4742,95 @@ const server = (() => {
   });
   return server;
 })();
+
+// ── Setup Health Check ──
+// Validates HCI configuration: hermes CLI, gateway API, TUI bridge, config
+app.get('/api/setup/check', requireAuth, async (req, res) => {
+  const results = [];
+
+  // 1. Check hermes CLI available
+  try {
+    const out = await shell('which hermes 2>/dev/null || echo NOT_FOUND');
+    results.push({
+      check: 'hermes_cli',
+      label: 'Hermes CLI',
+      ok: out !== 'NOT_FOUND',
+      detail: out !== 'NOT_FOUND' ? out : 'hermes not on PATH',
+    });
+  } catch {
+    results.push({ check: 'hermes_cli', label: 'Hermes CLI', ok: false, detail: 'not found' });
+  }
+
+  // 2. Check gateway API reachable (only for running profiles)
+  const ports = gatewayPorts;
+  // Cross-reference with `hermes profile list` to find running gateways
+  let runningPorts = {};
+  try {
+    const profileOut = await shell('hermes profile list 2>/dev/null');
+    // Parse lines like: "◆default  model  running  —"
+    const runningProfiles = profileOut.split('\n')
+      .filter(l => l.includes('running') && !l.includes('Gateway'))
+      .map(l => l.trim().split(/\s+/)[0].replace('◆', ''));
+    for (const [name, port] of Object.entries(ports)) {
+      if (runningProfiles.includes(name)) runningPorts[name] = port;
+    }
+  } catch {
+    runningPorts = ports; // fallback: try all discovered ports
+  }
+  if (Object.keys(runningPorts).length > 0) {
+    const entries = Object.entries(runningPorts);
+    // Check all running gateway APIs
+    const portResults = await Promise.all(entries.map(async ([name, port]) => {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 3000);
+        const healthRes = await fetch(`http://127.0.0.1:${port}/health`, { signal: ctrl.signal });
+        clearTimeout(t);
+        return `${name}:${port} — ${healthRes.ok ? 'healthy' : healthRes.status}`;
+      } catch {
+        return `${name}:${port} — unreachable`;
+      }
+    }));
+    const allHealthy = portResults.every(r => r.includes('healthy'));
+    results.push({
+      check: 'gateway_api',
+      label: 'Gateway API',
+      ok: allHealthy,
+      detail: portResults.join(', '),
+    });
+  } else {
+    results.push({
+      check: 'gateway_api',
+      label: 'Gateway API',
+      ok: false,
+      detail: Object.keys(ports).length > 0
+        ? `ports discovered (${Object.values(ports).join(', ')}) but no running gateways`
+        : 'no gateway ports configured — chat uses CLI fallback',
+    });
+  }
+
+  // 3. Check Python bridge (TUI gateway)
+  const pythonRoot = process.env.HERMES_PYTHON_SRC_ROOT || path.join(os.homedir(), '.hermes', 'hermes-agent');
+  const tuiEntry = path.join(pythonRoot, 'tui_gateway', 'entry.py');
+  results.push({
+    check: 'tui_bridge',
+    label: 'TUI Python Bridge',
+    ok: fs.existsSync(tuiEntry),
+    detail: fs.existsSync(tuiEntry) ? `found at ${tuiEntry}` : `missing — expected at ${tuiEntry}`,
+  });
+
+  // 4. Check hermes config.yaml
+  const configPath = path.join(os.homedir(), '.hermes', 'config.yaml');
+  try {
+    const raw = fs.readFileSync(configPath, 'utf8');
+    yaml.load(raw);
+    results.push({ check: 'hermes_config', label: 'Hermes Config', ok: true, detail: configPath });
+  } catch {
+    results.push({ check: 'hermes_config', label: 'Hermes Config', ok: false, detail: 'missing or invalid config.yaml' });
+  }
+
+  res.json({ ok: true, checks: results });
+});
 
 // ── WebSocket Chat Gateway Bridge ──
 // Proxies Gateway API /v1/responses via WebSocket for real-time event streaming.
