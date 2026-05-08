@@ -17,3 +17,8 @@ SECURITY-AUDIT.md
 
 # HCI config (per-deployment, contains secrets)
 hci.config.yaml
+
+# Playwright
+.auth-state.json
+test-results/
+playwright-report/
